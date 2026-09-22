@@ -41,6 +41,8 @@ We do **not** build parsers, a mutation engine, or another Sonar.
 Requires **Node 20+**. Lizard is a separate Python tool (MIT):
 
 ```bash
+git clone https://github.com/tylerjharden/agent-lint.git
+cd agent-lint
 npm install
 pip install -r requirements.txt   # lizard
 python3 -m lizard --version
