@@ -4,9 +4,9 @@
   "description": "Thin CLI wrapping cyclomatic (lizard + ESLint complexity) and cognitive (sonarjs) gates.",
   "repository": {
     "type": "git",
-    "url": "git+https://origin.cursor.com/git/durden/agent-lint.git"
+    "url": "git+https://github.com/tylerjharden/agent-lint.git"
   },
-  "homepage": "https://cursor.com/codebase/durden/agent-lint",
+  "homepage": "https://github.com/tylerjharden/agent-lint",
   "license": "MIT",
   "type": "module",
   "bin": {

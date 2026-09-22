@@ -9,8 +9,8 @@ Spike #1 (lanes 1+2): cyclomatic + cognitive. Architecture, mutation, perf, and 
 ## Repo
 
 - Package: `agent-lint` (bin: `agent-lint`)
-- Origin: [`durden/agent-lint`](https://cursor.com/codebase/durden/agent-lint)
-- Clone: `git clone https://origin.cursor.com/git/durden/agent-lint.git`
+- Source of truth: [`tylerjharden/agent-lint`](https://github.com/tylerjharden/agent-lint) (private)
+- Clone: `git clone https://github.com/tylerjharden/agent-lint.git`
 
 ## Real vs mock
 
