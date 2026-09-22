@@ -1,0 +1,4 @@
+{
+  "cyclomatic": { "max": 10, "tools": ["made-up"] },
+  "cognitive": { "max": 15 }
+}

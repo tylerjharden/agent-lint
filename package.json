@@ -1,0 +1,39 @@
+{
+  "name": "agent-lint",
+  "version": "0.1.0",
+  "description": "Thin CLI wrapping cyclomatic (lizard + ESLint complexity) and cognitive (sonarjs) gates.",
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "agent-lint": "./dist/cli.js"
+  },
+  "main": "./dist/cli.js",
+  "files": [
+    "bin",
+    "dist",
+    "README.md",
+    "LICENSE",
+    "agent-lint.config.json",
+    "requirements.txt"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsc",
+    "prepare": "tsc",
+    "agent-lint": "node dist/cli.js",
+    "test": "npm run build && node --test test/*.test.mjs",
+    "fixtures": "npm test",
+    "lint:self": "node dist/cli.js all src --format human"
+  },
+  "dependencies": {
+    "@typescript-eslint/parser": "^8.44.0",
+    "eslint": "^9.35.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.18.0",
+    "eslint-plugin-sonarjs": "^4.2.1",
+    "typescript": "^5.9.2"
+  }
+}

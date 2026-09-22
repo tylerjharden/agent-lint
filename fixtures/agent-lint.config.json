@@ -1,0 +1,10 @@
+{
+  "cyclomatic": {
+    "max": 10,
+    "tools": ["lizard", "eslint"]
+  },
+  "cognitive": {
+    "max": 15
+  },
+  "ignore": ["node_modules/**", "dist/**"]
+}

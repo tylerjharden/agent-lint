@@ -1,0 +1,4 @@
+# lizard is MIT. Install the CLI so agent-lint can wrap it.
+#   pip install -r requirements.txt
+#   python3 -m lizard --version
+lizard>=1.17
