@@ -9,7 +9,7 @@ Spike #1 (lanes 1+2): cyclomatic + cognitive. Architecture, mutation, perf, and 
 ## Repo
 
 - Package: `agent-lint` (bin: `agent-lint`)
-- Source of truth: [`tylerjharden/agent-lint`](https://github.com/tylerjharden/agent-lint) (private)
+- Source of truth: [`tylerjharden/agent-lint`](https://github.com/tylerjharden/agent-lint)
 - Clone: `git clone https://github.com/tylerjharden/agent-lint.git`
 
 ## Real vs mock
@@ -21,7 +21,7 @@ Spike #1 (lanes 1+2): cyclomatic + cognitive. Architecture, mutation, perf, and 
 | Cyclomatic | [lizard](https://github.com/terryyin/lizard) (MIT) **and** ESLint [`complexity`](https://eslint.org/docs/latest/rules/complexity) (MIT) |
 | Cognitive | [`eslint-plugin-sonarjs`](https://www.npmjs.com/package/eslint-plugin-sonarjs) `cognitive-complexity` (LGPL-3.0) |
 
-It does **not** invent CCN/cognitive scores, stub the tools, or call an LLM. If lizard or ESLint/sonarjs cannot run, the process exits **2** (never a soft pass).
+It does **not** invent CCN or cognitive scores, or stub the tools. If lizard or ESLint/sonarjs cannot run, the process exits **2** (never a soft pass).
 
 Lizard parsers can still “soft-fail” on broken syntax (that is lizard’s behavior). We surface a tool crash as exit 2; we do not re-parse the file ourselves.
 
@@ -110,7 +110,7 @@ Searched from the working directory, first hit wins:
 
 | Key | Default | Notes |
 |-----|---------|-------|
-| `cyclomatic.max` | **10** | Tighter than ESLint’s rule default (20) and lizard’s warning default (15). Agent diffs usually want the stricter bar. |
+| `cyclomatic.max` | **10** | Tighter than ESLint’s rule default (20) and lizard’s warning default (15). The stricter bar is intentional. |
 | `cyclomatic.tools` | `["lizard", "eslint"]` | Drop `lizard` only if you explicitly cannot install it. Missing lizard with lizard still listed is exit **2**. |
 | `cognitive.max` | **15** | Same as sonarjs’s usual default. |
 | `ignore` | `node_modules/**`, `dist/**`, `coverage/**`, `.git/**` | Prefix globs. |
@@ -160,7 +160,7 @@ If you redistribute a compiled binary of this CLI, keep sonarjs as a separate in
 ## What this is not
 
 - Not architecture lint, mutation testing, perf benches, or BC detection.
-- Not k6. Not an LLM reward signal.
+- Not k6. Not a training reward signal.
 - Not a claim that low complexity equals good design.
 
 ## Layout
