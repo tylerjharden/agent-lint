@@ -6,6 +6,12 @@ This is **not** a mega-linter and **not** a wisdom substitute. It reports cyclom
 
 Spike #1 (lanes 1+2): cyclomatic + cognitive. Architecture, mutation, perf, and BC are out of scope.
 
+## Repo
+
+- Package: `agent-lint` (bin: `agent-lint`)
+- Origin: [`durden/agent-lint`](https://cursor.com/codebase/durden/agent-lint)
+- Clone: `git clone https://origin.cursor.com/git/durden/agent-lint.git`
+
 ## Real vs mock
 
 **Real.** `agent-lint` actually invokes:
