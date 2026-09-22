@@ -22,31 +22,37 @@ function usesCognitive(lanes: Lane[]): boolean {
   return lanes.includes("cognitive");
 }
 
-function assertApplicable(
-  files: string[],
-  config: AgentLintConfig,
-  lanes: Lane[],
-): void {
-  const hasJsTs = files.some(isJsTsFile);
-  const hasLizard = files.some(isLizardFile);
-  const lizardOn = usesLizard(config, lanes);
-  const eslintOn = usesEslintCyclo(config, lanes);
-  const cogOn = usesCognitive(lanes);
+function requireJsTs(filePath: string, abs: string, lane: string): void {
+  if (isJsTsFile(abs) || isJsTsFile(filePath)) {
+    return;
+  }
+  throw new GateError(
+    `--stdin-code with ${lane} requires a JS/TS --stdin-file-path (got ${filePath})`,
+  );
+}
 
+function assertLaneFiles(files: string[], config: AgentLintConfig, lanes: Lane[]): void {
+  const hasJsTs = files.some(isJsTsFile);
   if (lanes.includes("cognitive") && !hasJsTs) {
     throw new GateError(
       "cognitive lane requires JavaScript or TypeScript files (eslint-plugin-sonarjs). No JS/TS files in the input set.",
     );
   }
-  if (lanes.includes("complexity") && !lizardOn && !hasJsTs) {
+  if (lanes.includes("complexity") && !usesLizard(config, lanes) && !hasJsTs) {
     throw new GateError(
       "complexity lane has no applicable files (need JS/TS for ESLint, or install/enable lizard for other languages).",
     );
   }
-  if (!hasLizard && !hasJsTs) {
+}
+
+function assertToolsEnabled(files: string[], config: AgentLintConfig, lanes: Lane[]): void {
+  const hasSource = files.some(isLizardFile) || files.some(isJsTsFile);
+  if (!hasSource) {
     throw new GateError("No supported source files found.");
   }
-  if (!lizardOn && !eslintOn && !cogOn) {
+  const anyTool =
+    usesLizard(config, lanes) || usesEslintCyclo(config, lanes) || usesCognitive(lanes);
+  if (!anyTool) {
     throw new GateError("No lanes/tools enabled for this run.");
   }
 }
@@ -56,7 +62,8 @@ async function runOnFiles(
   config: AgentLintConfig,
   lanes: Lane[],
 ): Promise<Finding[]> {
-  assertApplicable(files, config, lanes);
+  assertLaneFiles(files, config, lanes);
+  assertToolsEnabled(files, config, lanes);
   const findings: Finding[] = [];
   if (usesLizard(config, lanes)) {
     findings.push(...runLizard(files, config.cyclomatic.max));
@@ -70,43 +77,54 @@ async function runOnFiles(
   return findings;
 }
 
+async function runEslintOnText(
+  code: string,
+  filePath: string,
+  abs: string,
+  config: AgentLintConfig,
+  lanes: Lane[],
+): Promise<Finding[]> {
+  const findings: Finding[] = [];
+  if (usesEslintCyclo(config, lanes)) {
+    requireJsTs(filePath, abs, "ESLint complexity");
+    findings.push(...(await runEslintComplexityText(code, abs, config.cyclomatic.max)));
+  }
+  if (usesCognitive(lanes)) {
+    requireJsTs(filePath, abs, "cognitive");
+    findings.push(...(await runEslintCognitiveText(code, abs, config.cognitive.max)));
+  }
+  return findings;
+}
+
 async function runOnStdinCode(
   code: string,
   filePath: string,
   config: AgentLintConfig,
   lanes: Lane[],
 ): Promise<Finding[]> {
-  const findings: Finding[] = [];
   const abs = resolve(filePath);
-  const needsLizard = usesLizard(config, lanes);
-  let temp: ReturnType<typeof writeTempSource> | undefined;
+  const temp = usesLizard(config, lanes) ? writeTempSource(code, filePath) : undefined;
   try {
-    if (needsLizard) {
-      temp = writeTempSource(code, filePath);
-      findings.push(...runLizard([temp.filePath], config.cyclomatic.max));
-    }
-    if (usesEslintCyclo(config, lanes)) {
-      if (!isJsTsFile(abs) && !isJsTsFile(filePath)) {
-        throw new GateError(
-          `--stdin-code with ESLint complexity requires a JS/TS --stdin-file-path (got ${filePath})`,
-        );
-      }
-      findings.push(
-        ...(await runEslintComplexityText(code, abs, config.cyclomatic.max)),
-      );
-    }
-    if (usesCognitive(lanes)) {
-      if (!isJsTsFile(abs) && !isJsTsFile(filePath)) {
-        throw new GateError(
-          `--stdin-code with cognitive requires a JS/TS --stdin-file-path (got ${filePath})`,
-        );
-      }
-      findings.push(...(await runEslintCognitiveText(code, abs, config.cognitive.max)));
-    }
+    const fromLizard = temp === undefined ? [] : runLizard([temp.filePath], config.cyclomatic.max);
+    const fromEslint = await runEslintOnText(code, filePath, abs, config, lanes);
+    return [...fromLizard, ...fromEslint];
   } finally {
     temp?.cleanup();
   }
-  return findings;
+}
+
+function resolvePathArgs(args: CliArgs, stdinText: string | undefined): string[] {
+  const paths = [...args.paths];
+  if (args.stdin) {
+    if (stdinText === undefined) {
+      throw new GateError("--stdin was set but stdin was empty");
+    }
+    paths.push(...parsePathList(stdinText));
+  }
+  if (paths.length === 0) {
+    throw new GateError("No paths given. Pass files/directories or pipe paths on stdin.");
+  }
+  return paths;
 }
 
 export async function runLint(
@@ -129,18 +147,7 @@ export async function runLint(
     return reportFromFindings(findings, lanes, thresholds);
   }
 
-  const paths = [...args.paths];
-  if (args.stdin) {
-    if (stdinText === undefined) {
-      throw new GateError("--stdin was set but stdin was empty");
-    }
-    paths.push(...parsePathList(stdinText));
-  }
-  if (paths.length === 0) {
-    throw new GateError("No paths given. Pass files/directories or pipe paths on stdin.");
-  }
-
-  const files = collectFromPaths(paths, cwd, config.ignore);
+  const files = collectFromPaths(resolvePathArgs(args, stdinText), cwd, config.ignore);
   if (files.length === 0) {
     throw new GateError("No supported source files found after applying ignore patterns.");
   }

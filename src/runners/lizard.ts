@@ -1,4 +1,4 @@
-import { spawnSync } from "node:child_process";
+import { spawnSync, type SpawnSyncReturns } from "node:child_process";
 import { GateError } from "../errors.js";
 import { isLizardFile } from "../extensions.js";
 import type { Finding } from "../types.js";
@@ -33,9 +33,9 @@ export function resolveLizardCommand(): LizardCommand {
   );
 }
 
-function parseLizardRow(fields: string[], threshold: number): Finding | undefined {
+function requireLizardRow(fields: string[]): { ccn: number; file: string; functionName: string; line: number } {
   if (fields.length < 11) {
-    return undefined;
+    throw new GateError(`Unparseable lizard CSV row: ${fields.join(",")}`);
   }
   const ccn = Number(fields[1]);
   const file = fields[6] ?? "";
@@ -44,29 +44,34 @@ function parseLizardRow(fields: string[], threshold: number): Finding | undefine
   if (!Number.isFinite(ccn) || file === "") {
     throw new GateError(`Unparseable lizard CSV row: ${fields.join(",")}`);
   }
-  if (ccn <= threshold) {
+  return {
+    ccn,
+    file,
+    functionName,
+    line: Number.isInteger(start) ? start : 1,
+  };
+}
+
+function findingFromRow(fields: string[], threshold: number): Finding | undefined {
+  const row = requireLizardRow(fields);
+  if (row.ccn <= threshold) {
     return undefined;
   }
-  const line = Number.isInteger(start) ? start : 1;
   return {
     lane: "complexity",
     tool: "lizard",
     rule: "lizard/cyclomatic",
-    file,
-    line,
-    functionName: functionName === "" ? undefined : functionName,
+    file: row.file,
+    line: row.line,
+    functionName: row.functionName === "" ? undefined : row.functionName,
     metric: "cyclomatic",
-    value: ccn,
+    value: row.ccn,
     threshold,
-    message: `Function '${functionName || "unknown"}' has cyclomatic complexity ${ccn} (max ${threshold})`,
+    message: `Function '${row.functionName || "unknown"}' has cyclomatic complexity ${row.ccn} (max ${threshold})`,
   };
 }
 
-export function runLizard(files: string[], threshold: number): Finding[] {
-  const targets = files.filter(isLizardFile);
-  if (targets.length === 0) {
-    return [];
-  }
+function spawnLizard(targets: string[]): SpawnSyncReturns<string> {
   const lizard = resolveLizardCommand();
   const args = [...lizard.prefix, "--csv", "-i", "-1", ...targets];
   const result = spawnSync(lizard.cmd, args, { encoding: "utf8" });
@@ -81,16 +86,28 @@ export function runLizard(files: string[], threshold: number): Finding[] {
       `lizard exited ${result.status}${detail === "" ? "" : `: ${detail}`}`,
     );
   }
+  return result;
+}
+
+function findingsFromCsv(stdout: string, threshold: number): Finding[] {
   const findings: Finding[] = [];
-  for (const rawLine of result.stdout.split(/\r?\n/)) {
+  for (const rawLine of stdout.split(/\r?\n/)) {
     const line = rawLine.trim();
     if (line === "") {
       continue;
     }
-    const finding = parseLizardRow(parseCsvLine(line), threshold);
+    const finding = findingFromRow(parseCsvLine(line), threshold);
     if (finding !== undefined) {
       findings.push(finding);
     }
   }
   return findings;
+}
+
+export function runLizard(files: string[], threshold: number): Finding[] {
+  const targets = files.filter(isLizardFile);
+  if (targets.length === 0) {
+    return [];
+  }
+  return findingsFromCsv(spawnLizard(targets).stdout, threshold);
 }

@@ -27,54 +27,6 @@ function parsePositiveInt(raw: string, flag: string): number {
   return value;
 }
 
-function applyFlag(
-  flag: string,
-  argv: string[],
-  index: number,
-  args: CliArgs,
-): number {
-  switch (flag) {
-    case "--help":
-    case "-h":
-      args.help = true;
-      return 1;
-    case "--version":
-    case "-v":
-      args.version = true;
-      return 1;
-    case "--json":
-      args.format = "json";
-      return 1;
-    case "--sarif":
-      args.format = "sarif";
-      return 1;
-    case "--stdin":
-      args.stdin = true;
-      return 1;
-    case "--stdin-code":
-      args.stdinCode = true;
-      return 1;
-    case "--format":
-      args.format = parseFormat(takeValue(argv, index, flag));
-      return 2;
-    case "--config":
-      args.configPath = takeValue(argv, index, flag);
-      return 2;
-    case "--stdin-file-path":
-      args.stdinFilePath = takeValue(argv, index, flag);
-      return 2;
-    case "--max-cyclomatic":
-      args.maxCyclomatic = parsePositiveInt(takeValue(argv, index, flag), flag);
-      return 2;
-    case "--max-cognitive":
-      args.maxCognitive = parsePositiveInt(takeValue(argv, index, flag), flag);
-      return 2;
-    default: {
-      throw new GateError(`Unknown option: ${flag}`);
-    }
-  }
-}
-
 function parseFormat(raw: string): Format {
   if (!isFormat(raw)) {
     throw new GateError(`Unknown format: ${raw} (expected human|json|sarif)`);
@@ -82,9 +34,113 @@ function parseFormat(raw: string): Format {
   return raw;
 }
 
+type FlagFn = (args: CliArgs, argv: string[], index: number) => number;
+
+const FLAG_HANDLERS: Record<string, FlagFn> = {
+  "--help": (args) => {
+    args.help = true;
+    return 1;
+  },
+  "-h": (args) => {
+    args.help = true;
+    return 1;
+  },
+  "--version": (args) => {
+    args.version = true;
+    return 1;
+  },
+  "-v": (args) => {
+    args.version = true;
+    return 1;
+  },
+  "--json": (args) => {
+    args.format = "json";
+    return 1;
+  },
+  "--sarif": (args) => {
+    args.format = "sarif";
+    return 1;
+  },
+  "--stdin": (args) => {
+    args.stdin = true;
+    return 1;
+  },
+  "--stdin-code": (args) => {
+    args.stdinCode = true;
+    return 1;
+  },
+  "--format": (args, argv, index) => {
+    args.format = parseFormat(takeValue(argv, index, "--format"));
+    return 2;
+  },
+  "--config": (args, argv, index) => {
+    args.configPath = takeValue(argv, index, "--config");
+    return 2;
+  },
+  "--stdin-file-path": (args, argv, index) => {
+    args.stdinFilePath = takeValue(argv, index, "--stdin-file-path");
+    return 2;
+  },
+  "--max-cyclomatic": (args, argv, index) => {
+    args.maxCyclomatic = parsePositiveInt(takeValue(argv, index, "--max-cyclomatic"), "--max-cyclomatic");
+    return 2;
+  },
+  "--max-cognitive": (args, argv, index) => {
+    args.maxCognitive = parsePositiveInt(takeValue(argv, index, "--max-cognitive"), "--max-cognitive");
+    return 2;
+  },
+};
+
+const FLAGS_WITH_VALUE = new Set([
+  "--format",
+  "--config",
+  "--stdin-file-path",
+  "--max-cyclomatic",
+  "--max-cognitive",
+]);
+
+function applyFlag(flag: string, argv: string[], index: number, args: CliArgs): number {
+  const handler = FLAG_HANDLERS[flag];
+  if (handler === undefined) {
+    throw new GateError(`Unknown option: ${flag}`);
+  }
+  return handler(args, argv, index);
+}
+
+function consumePositionals(argv: string[]): { command: Command; rest: string[] } {
+  const rest: string[] = [];
+  let command: Command | undefined;
+  let index = 0;
+  while (index < argv.length) {
+    const token = argv[index];
+    if (token === undefined) {
+      break;
+    }
+    if (token === "--") {
+      rest.push(...argv.slice(index + 1));
+      break;
+    }
+    if (token.startsWith("-")) {
+      const skip = FLAGS_WITH_VALUE.has(token) ? 2 : 1;
+      rest.push(...argv.slice(index, index + skip));
+      index += skip;
+      continue;
+    }
+    if (command === undefined && isCommand(token)) {
+      command = token;
+      index += 1;
+      continue;
+    }
+    rest.push(token);
+    index += 1;
+  }
+  return { command: command ?? "all", rest };
+}
+
 export function parseArgs(argv: string[]): CliArgs {
+  const peeled = consumePositionals(argv);
   const args: CliArgs = {
-    command: "all",
+    command: peeled.command,
     paths: [],
     format: "human",
     stdin: false,
@@ -95,22 +151,18 @@ export function parseArgs(argv: string[]): CliArgs {
   };
 
   let index = 0;
-  if (argv[0] !== undefined && isCommand(argv[0])) {
-    args.command = argv[0];
-    index = 1;
-  }
-
-  while (index < argv.length) {
-    const token = argv[index];
+  const tokens = peeled.rest;
+  while (index < tokens.length) {
+    const token = tokens[index];
     if (token === undefined) {
       break;
     }
     if (token === "--") {
-      args.paths.push(...argv.slice(index + 1));
+      args.paths.push(...tokens.slice(index + 1));
       break;
     }
     if (token.startsWith("-")) {
-      index += applyFlag(token, argv, index, args);
+      index += applyFlag(token, tokens, index, args);
       continue;
     }
     args.paths.push(token);
