@@ -1,0 +1,7 @@
+{
+  "cyclomatic": { "max": 10, "tools": ["lizard", "eslint"] },
+  "cognitive": { "max": 15 },
+  "architecture": { "config": "fixtures/arch/.dependency-cruiser.cjs" },
+  "mutation": { "config": "fixtures/mutation/pass-01-add/stryker.config.json" },
+  "ignore": ["node_modules/**", "dist/**"]
+}

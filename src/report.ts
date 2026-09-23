@@ -7,6 +7,7 @@ import type {
   LintReport,
   MetricFinding,
   RuleFinding,
+  ScoreFinding,
   Thresholds,
 } from "./types.js";
 import { packageVersion } from "./version.js";
@@ -31,12 +32,19 @@ function formatRuleLine(finding: RuleFinding, cwd: string): string {
   return `${file}:${finding.line}  → ${to}  [${finding.tool}]  ${finding.rule}  ${finding.message}`;
 }
 
+function formatScoreLine(finding: ScoreFinding, cwd: string): string {
+  const file = displayPath(finding.file, cwd);
+  return `${file}:${finding.line}  mutation-score ${finding.value} < ${finding.threshold}  [${finding.tool}]  ${finding.message}`;
+}
+
 function formatFindingLine(finding: Finding, cwd: string): string {
   switch (finding.kind) {
     case "metric":
       return formatMetricLine(finding, cwd);
     case "rule":
       return formatRuleLine(finding, cwd);
+    case "score":
+      return formatScoreLine(finding, cwd);
     default: {
       const exhaustive: never = finding;
       throw new Error(`Unknown finding: ${String(exhaustive)}`);
@@ -52,6 +60,12 @@ function humanHeader(report: LintReport): string[] {
   ];
   if (report.lanes.includes("architecture")) {
     lines.push("architecture: dependency-cruiser");
+  }
+  if (report.lanes.includes("mutation")) {
+    const breakAt = report.thresholds.mutation;
+    lines.push(
+      breakAt === undefined ? "mutation: stryker" : `mutation break: ${breakAt}`,
+    );
   }
   lines.push("");
   return lines;
@@ -105,6 +119,8 @@ function findingForJson(finding: Finding, cwd: string): Finding {
         file: displayPath(finding.file, cwd),
         to: finding.to === undefined ? undefined : displayPath(finding.to, cwd),
       };
+    case "score":
+      return { ...finding, file: displayPath(finding.file, cwd) };
     default: {
       const exhaustive: never = finding;
       throw new Error(`Unknown finding: ${String(exhaustive)}`);
@@ -137,13 +153,17 @@ interface SarifResult {
   properties: {
     lane: Lane;
     tool: string;
-    kind: "metric" | "rule";
+    kind: "metric" | "rule" | "score";
     metric?: string;
     value?: number;
     threshold?: number;
     functionName?: string;
     to?: string;
     rule?: string;
+    killed?: number;
+    survived?: number;
+    noCoverage?: number;
+    timeout?: number;
   };
 }
 
@@ -153,6 +173,8 @@ function sarifRuleId(finding: Finding): string {
       return finding.rule;
     case "rule":
       return "dependency-cruiser";
+    case "score":
+      return "mutation-score";
     default: {
       const exhaustive: never = finding;
       throw new Error(`Unknown finding: ${String(exhaustive)}`);
@@ -179,6 +201,19 @@ function sarifProperties(finding: Finding, cwd: string): SarifResult["properties
         kind: "rule",
         rule: finding.rule,
         to: finding.to === undefined ? undefined : displayPath(finding.to, cwd),
+      };
+    case "score":
+      return {
+        lane: finding.lane,
+        tool: finding.tool,
+        kind: "score",
+        rule: finding.rule,
+        value: finding.value,
+        threshold: finding.threshold,
+        killed: finding.killed,
+        survived: finding.survived,
+        noCoverage: finding.noCoverage,
+        timeout: finding.timeout,
       };
     default: {
       const exhaustive: never = finding;
@@ -231,6 +266,10 @@ export function formatSarif(report: LintReport, cwd = process.cwd()): string {
               {
                 id: "dependency-cruiser",
                 shortDescription: { text: "Architecture dependency rule (dependency-cruiser)" },
+              },
+              {
+                id: "mutation-score",
+                shortDescription: { text: "Mutation score (StrykerJS)" },
               },
             ],
           },

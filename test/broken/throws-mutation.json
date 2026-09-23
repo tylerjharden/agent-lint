@@ -1,0 +1,6 @@
+{
+  "cyclomatic": { "max": 10, "tools": ["eslint"] },
+  "cognitive": { "max": 15 },
+  "mutation": { "config": "test/broken/throws-stryker.config.js" },
+  "ignore": ["node_modules/**", "dist/**"]
+}

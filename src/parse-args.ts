@@ -1,10 +1,16 @@
 import { GateError } from "./errors.js";
 import type { CliArgs, Command, Format } from "./types.js";
 
-const COMMANDS: readonly Command[] = ["complexity", "cognitive", "arch", "all"];
+const COMMANDS: readonly Command[] = ["complexity", "cognitive", "arch", "mutation", "all"];
 
-function isCommand(value: string): value is Command {
-  return (COMMANDS as readonly string[]).includes(value);
+function asCommand(value: string): Command | undefined {
+  if (value === "mutate") {
+    return "mutation";
+  }
+  if ((COMMANDS as readonly string[]).includes(value)) {
+    return value as Command;
+  }
+  return undefined;
 }
 
 function isFormat(value: string): value is Format {
@@ -126,10 +132,13 @@ function consumePositionals(argv: string[]): { command: Command; rest: string[] 
       index += skip;
       continue;
     }
-    if (command === undefined && isCommand(token)) {
-      command = token;
-      index += 1;
-      continue;
+    if (command === undefined) {
+      const parsed = asCommand(token);
+      if (parsed !== undefined) {
+        command = parsed;
+        index += 1;
+        continue;
+      }
     }
     rest.push(token);
     index += 1;

@@ -4,4 +4,6 @@ uploads/
 *.tsbuildinfo
 .DS_Store
 coverage/
+reports/
+.stryker-tmp/
 .eslintcache

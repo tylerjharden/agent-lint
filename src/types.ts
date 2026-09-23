@@ -1,9 +1,9 @@
 import type { ExitCode } from "./exit.js";
 
-export type Command = "complexity" | "cognitive" | "arch" | "all";
+export type Command = "complexity" | "cognitive" | "arch" | "mutation" | "all";
 export type Format = "human" | "json" | "sarif";
-export type Lane = "complexity" | "cognitive" | "architecture";
-export type ToolName = "lizard" | "eslint" | "sonarjs" | "dependency-cruiser";
+export type Lane = "complexity" | "cognitive" | "architecture" | "mutation";
+export type ToolName = "lizard" | "eslint" | "sonarjs" | "dependency-cruiser" | "stryker";
 export type Metric = "cyclomatic" | "cognitive";
 export type CyclomaticTool = "lizard" | "eslint";
 
@@ -32,11 +32,28 @@ export interface RuleFinding {
   message: string;
 }
 
-export type Finding = MetricFinding | RuleFinding;
+export interface ScoreFinding {
+  kind: "score";
+  lane: "mutation";
+  tool: "stryker";
+  rule: "mutation-score";
+  file: string;
+  line: number;
+  value: number;
+  threshold: number;
+  killed?: number;
+  survived?: number;
+  noCoverage?: number;
+  timeout?: number;
+  message: string;
+}
+
+export type Finding = MetricFinding | RuleFinding | ScoreFinding;
 
 export interface Thresholds {
   cyclomatic: number;
   cognitive: number;
+  mutation?: number;
 }
 
 export interface LintReport {
@@ -57,6 +74,9 @@ export interface AgentLintConfig {
     max: number;
   };
   architecture: {
+    config: string;
+  };
+  mutation?: {
     config: string;
   };
   ignore: string[];

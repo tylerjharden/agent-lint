@@ -1,6 +1,6 @@
 # Golden fixtures
 
-Shared pass set covers **complexity and cognitive**. Architecture fixtures are small module graphs under `arch/`. Fail fixtures are labeled by lane in the filename or directory name.
+Shared pass set covers **complexity and cognitive**. Architecture fixtures are small module graphs under `arch/`. Mutation fixtures are one-function packages under `mutation/`. Fail fixtures are labeled by lane in the filename or directory name.
 
 | Path | Lane | Expected CLI |
 |------|------|----------------|
@@ -21,5 +21,10 @@ Shared pass set covers **complexity and cognitive**. Architecture fixtures are s
 | `arch/fail-01-domain-to-ui` | architecture (domain imports ui) | exit 1 |
 | `arch/fail-02-circular` | architecture (circular pair) | exit 1 |
 | `arch/fail-03-app-to-ui` | architecture (app imports ui) | exit 1 |
+| `mutation/pass-01-add` | mutation (score ≥ break 80) | exit 0 |
+| `mutation/fail-01-survived` | mutation (score < break 80) | exit 1 |
+| `mutation/empty-01-no-mutants` | mutation (0 valid mutants) | exit 2 |
 
-Thresholds: `fixtures/agent-lint.config.json` (cyclomatic max 10, cognitive max 15). Architecture rules: `fixtures/arch/.dependency-cruiser.cjs`.
+Thresholds: `fixtures/agent-lint.config.json` (cyclomatic max 10, cognitive max 15). Architecture rules: `fixtures/arch/.dependency-cruiser.cjs`. Mutation uses the native `stryker.config.json` in each mutation fixture. `all` does not start Stryker unless `mutation.config` is set.
+
+Measured `npx stryker run` cost: pass-01-add 1.1s (score 100), fail-01-survived 1.3s (score 60), empty-01-no-mutants 1.0s (n/a).

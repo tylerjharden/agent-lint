@@ -1,14 +1,15 @@
 import { resolve } from "node:path";
 import { collectFromPaths, parsePathList } from "./collect-paths.js";
-import type { AgentLintConfig, CliArgs, Finding, Lane, LintReport } from "./types.js";
+import type { AgentLintConfig, CliArgs, Finding, Lane, LintReport, Thresholds } from "./types.js";
 import { GateError } from "./errors.js";
 import { isJsTsFile, isLizardFile } from "./extensions.js";
-import { lanesFor } from "./lanes.js";
+import { lanesFor, mutationConfigured } from "./lanes.js";
 import { reportFromFindings } from "./report.js";
 import { runDepcruise } from "./runners/depcruise.js";
 import { runEslintCognitive, runEslintCognitiveText } from "./runners/eslint-cognitive.js";
 import { runEslintComplexity, runEslintComplexityText } from "./runners/eslint-complexity.js";
 import { runLizard } from "./runners/lizard.js";
+import { runStryker } from "./runners/stryker.js";
 import { writeTempSource } from "./temp-source.js";
 
 function usesLizard(config: AgentLintConfig, lanes: Lane[]): boolean {
@@ -27,17 +28,35 @@ function usesArchitecture(lanes: Lane[]): boolean {
   return lanes.includes("architecture");
 }
 
-function lanesForThisRun(args: CliArgs): Lane[] {
+function usesMutation(lanes: Lane[]): boolean {
+  return lanes.includes("mutation");
+}
+
+function lanesForThisRun(args: CliArgs, config: AgentLintConfig): Lane[] {
   if (args.stdinCode && args.command === "arch") {
     throw new GateError(
       "arch does not accept --stdin-code. Architecture runs on files on disk.",
     );
   }
-  const lanes = lanesFor(args.command);
+  if (args.stdinCode && args.command === "mutation") {
+    throw new GateError(
+      "mutation does not accept --stdin-code. Mutation runs on files on disk.",
+    );
+  }
+  const lanes = lanesFor(args.command, mutationConfigured(config));
   if (!args.stdinCode) {
     return lanes;
   }
-  return lanes.filter((lane) => lane !== "architecture");
+  return lanes.filter((lane) => lane !== "architecture" && lane !== "mutation");
+}
+
+function requireMutationConfig(config: AgentLintConfig): string {
+  if (config.mutation === undefined) {
+    throw new GateError(
+      "Mutation config is not set. Set mutation.config to a native Stryker file. Copy templates/mutation/stryker.config.json and point mutation.config at the copy.",
+    );
+  }
+  return config.mutation.config;
 }
 
 function requireJsTs(filePath: string, abs: string, lane: string): void {
@@ -77,7 +96,8 @@ function assertToolsEnabled(files: string[], config: AgentLintConfig, lanes: Lan
     usesLizard(config, lanes) ||
     usesEslintCyclo(config, lanes) ||
     usesCognitive(lanes) ||
-    usesArchitecture(lanes);
+    usesArchitecture(lanes) ||
+    usesMutation(lanes);
   if (!anyTool) {
     throw new GateError("No lanes/tools enabled for this run.");
   }
@@ -88,10 +108,11 @@ async function runOnFiles(
   config: AgentLintConfig,
   lanes: Lane[],
   cwd: string,
-): Promise<Finding[]> {
+): Promise<{ findings: Finding[]; mutationBreak?: number }> {
   assertLaneFiles(files, config, lanes);
   assertToolsEnabled(files, config, lanes);
   const findings: Finding[] = [];
+  let mutationBreak: number | undefined;
   if (usesLizard(config, lanes)) {
     findings.push(...runLizard(files, config.cyclomatic.max));
   }
@@ -104,7 +125,14 @@ async function runOnFiles(
   if (usesArchitecture(lanes)) {
     findings.push(...(await runDepcruise(files, config.architecture.config, cwd)));
   }
-  return findings;
+  if (usesMutation(lanes)) {
+    const mutation = await runStryker(requireMutationConfig(config), cwd);
+    findings.push(...mutation.findings);
+    if (mutation.breakThreshold !== null) {
+      mutationBreak = mutation.breakThreshold;
+    }
+  }
+  return { findings, mutationBreak };
 }
 
 async function runEslintOnText(
@@ -157,24 +185,34 @@ function resolvePathArgs(args: CliArgs, stdinText: string | undefined): string[]
   return paths;
 }
 
+function thresholdsFrom(
+  config: AgentLintConfig,
+  mutationBreak: number | undefined,
+): Thresholds {
+  const thresholds: Thresholds = {
+    cyclomatic: config.cyclomatic.max,
+    cognitive: config.cognitive.max,
+  };
+  if (mutationBreak !== undefined) {
+    thresholds.mutation = mutationBreak;
+  }
+  return thresholds;
+}
+
 export async function runLint(
   args: CliArgs,
   config: AgentLintConfig,
   stdinText: string | undefined,
   cwd = process.cwd(),
 ): Promise<LintReport> {
-  const lanes = lanesForThisRun(args);
-  const thresholds = {
-    cyclomatic: config.cyclomatic.max,
-    cognitive: config.cognitive.max,
-  };
+  const lanes = lanesForThisRun(args, config);
 
   if (args.stdinCode) {
     if (stdinText === undefined) {
       throw new GateError("--stdin-code was set but stdin was empty");
     }
     const findings = await runOnStdinCode(stdinText, args.stdinFilePath, config, lanes);
-    return reportFromFindings(findings, lanes, thresholds);
+    return reportFromFindings(findings, lanes, thresholdsFrom(config, undefined));
   }
 
   const files = collectFromPaths(resolvePathArgs(args, stdinText), cwd, config.ignore);
@@ -182,6 +220,6 @@ export async function runLint(
     throw new GateError("No supported source files found after applying ignore patterns.");
   }
 
-  const findings = await runOnFiles(files, config, lanes, cwd);
-  return reportFromFindings(findings, lanes, thresholds);
+  const result = await runOnFiles(files, config, lanes, cwd);
+  return reportFromFindings(result.findings, lanes, thresholdsFrom(config, result.mutationBreak));
 }

@@ -52,6 +52,7 @@ test("help exits 0", () => {
   });
   assert.equal(result.status, 0);
   assert.match(result.stdout, /agent-lint/);
+  assert.match(result.stdout, /mutation/);
 });
 
 test("node bin/agent-lint.js --version exits 0", () => {
@@ -299,5 +300,174 @@ test("warn severity does not fail the architecture gate", () => {
 
 test("unknown flag → 2", () => {
   const result = run(["all", "--not-a-real-flag"]);
+  assert.equal(result.status, 2, result.stderr + result.stdout);
+});
+
+function runMutation(args, options = {}) {
+  return spawnSync(process.execPath, [cli, ...args], {
+    cwd: root,
+    encoding: "utf8",
+    ...options,
+  });
+}
+
+test("mutate alias on a healthy fixture → 0", () => {
+  const result = runMutation([
+    "--config",
+    "test/mutation-enabled.json",
+    "mutate",
+    "fixtures/mutation/pass-01-add",
+    "--json",
+  ]);
+  assert.equal(result.status, 0, result.stderr + result.stdout);
+  const body = JSON.parse(result.stdout);
+  assert.equal(body.ok, true);
+  assert.equal(body.findings.length, 0);
+  assert.ok(body.lanes.includes("mutation"));
+});
+
+test("mutation score below break → 1", () => {
+  const result = runMutation([
+    "--config",
+    "test/mutation-fail.json",
+    "mutation",
+    "fixtures/mutation/fail-01-survived",
+    "--json",
+  ]);
+  assert.equal(result.status, 1, result.stderr + result.stdout);
+  const body = JSON.parse(result.stdout);
+  assert.equal(body.findings.length, 1);
+  const finding = body.findings[0];
+  assert.equal(finding.kind, "score");
+  assert.equal(finding.lane, "mutation");
+  assert.equal(finding.tool, "stryker");
+  assert.equal(finding.rule, "mutation-score");
+  assert.equal(finding.threshold, 80);
+  assert.ok(finding.value < finding.threshold);
+});
+
+test("mutation fail human line uses <", () => {
+  const result = runMutation([
+    "--config",
+    "test/mutation-fail.json",
+    "mutation",
+    "fixtures/mutation/fail-01-survived",
+  ]);
+  assert.equal(result.status, 1, result.stderr + result.stdout);
+  assert.match(result.stdout, /mutation-score .+ < .+ \[stryker\]/);
+});
+
+test("zero valid mutants → 2", () => {
+  const result = runMutation([
+    "--config",
+    "test/mutation-empty.json",
+    "mutation",
+    "fixtures/mutation/empty-01-no-mutants",
+  ]);
+  assert.equal(result.status, 2, result.stderr + result.stdout);
+  assert.match(`${result.stderr}${result.stdout}`, /unscorable|0 valid mutant|No files to mutate|no mutant/i);
+});
+
+test("all without mutation.config does not start Stryker", () => {
+  const result = run(["all", "fixtures/pass", "--json"]);
+  assert.equal(result.status, 0, result.stderr + result.stdout);
+  const body = JSON.parse(result.stdout);
+  assert.deepEqual(body.lanes, ["complexity", "cognitive", "architecture"]);
+});
+
+test("all with mutation.config includes mutation → 0", () => {
+  const result = runMutation([
+    "--config",
+    "test/mutation-enabled.json",
+    "all",
+    "fixtures/pass",
+    "--json",
+  ]);
+  assert.equal(result.status, 0, result.stderr + result.stdout);
+  const body = JSON.parse(result.stdout);
+  assert.deepEqual(body.lanes, ["complexity", "cognitive", "architecture", "mutation"]);
+  assert.equal(body.findings.length, 0);
+});
+
+test("all --stdin-code skips mutation even when configured", () => {
+  const result = runMutation(
+    [
+      "--config",
+      "test/mutation-enabled.json",
+      "all",
+      "--stdin-code",
+      "--stdin-file-path",
+      "snippet.ts",
+      "--json",
+    ],
+    { input: "export function add(a: number, b: number) { return a + b; }\n" },
+  );
+  assert.equal(result.status, 0, result.stderr + result.stdout);
+  const body = JSON.parse(result.stdout);
+  assert.deepEqual(body.lanes, ["complexity", "cognitive"]);
+});
+
+test("mutation --stdin-code → 2", () => {
+  const result = runMutation(
+    [
+      "--config",
+      "test/mutation-enabled.json",
+      "mutation",
+      "--stdin-code",
+      "--stdin-file-path",
+      "snippet.ts",
+    ],
+    { input: "export function add(a: number, b: number) { return a + b; }\n" },
+  );
+  assert.equal(result.status, 2, result.stderr + result.stdout);
+});
+
+test("missing Stryker config file → 2", () => {
+  const result = runMutation([
+    "--config",
+    "test/broken/missing-mutation.json",
+    "mutation",
+    "fixtures/mutation/pass-01-add",
+  ]);
+  assert.equal(result.status, 2, result.stderr + result.stdout);
+});
+
+test("mutation.config unset on explicit mutation → 2", () => {
+  const result = runMutation([
+    "--config",
+    "test/broken/no-mutation-key.json",
+    "mutation",
+    "fixtures/mutation/pass-01-add",
+  ]);
+  assert.equal(result.status, 2, result.stderr + result.stdout);
+});
+
+test("empty mutation.config → 2", () => {
+  const result = runMutation([
+    "--config",
+    "test/broken/empty-mutation-config.json",
+    "mutation",
+    "fixtures/mutation/pass-01-add",
+  ]);
+  assert.equal(result.status, 2, result.stderr + result.stdout);
+});
+
+test("broken Stryker config file → 2", () => {
+  const result = runMutation([
+    "--config",
+    "test/broken/throws-mutation.json",
+    "mutation",
+    "fixtures/mutation/pass-01-add",
+  ]);
+  assert.equal(result.status, 2, result.stderr + result.stdout);
+});
+
+test("invalid Stryker JSON → 2", () => {
+  const result = runMutation([
+    "--config",
+    "test/broken/not-json-mutation.json",
+    "mutation",
+    "fixtures/mutation/pass-01-add",
+  ]);
   assert.equal(result.status, 2, result.stderr + result.stdout);
 });
