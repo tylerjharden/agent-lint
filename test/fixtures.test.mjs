@@ -26,6 +26,16 @@ const FAIL_COG = [
   "fixtures/fail/fail-cog-02-nested-loops.ts",
   "fixtures/fail/fail-cog-03-mixed-control.ts",
 ];
+const PASS_ARCH = [
+  "fixtures/arch/pass-01-ui-to-app",
+  "fixtures/arch/pass-02-app-to-domain",
+  "fixtures/arch/pass-03-domain-only",
+];
+const FAIL_ARCH = [
+  ["fixtures/arch/fail-01-domain-to-ui", "no-domain-to-ui"],
+  ["fixtures/arch/fail-02-circular", "no-circular"],
+  ["fixtures/arch/fail-03-app-to-ui", "no-app-to-ui"],
+];
 
 function run(args, options = {}) {
   return spawnSync(process.execPath, [cli, "--config", fixtureConfig, ...args], {
@@ -90,7 +100,8 @@ for (const file of FAIL_CYCLO) {
     const result = run(["complexity", file, "--json"]);
     assert.equal(result.status, 1, result.stderr + result.stdout);
     const body = JSON.parse(result.stdout);
-    assert.ok(body.findings.some((f) => f.lane === "complexity"));
+    assert.ok(body.findings.length > 0);
+    assert.ok(body.findings.every((f) => f.lane === "complexity" && f.kind === "metric"));
   });
 }
 
@@ -176,6 +187,10 @@ test("stdin-code of a simple snippet → 0", () => {
     { input: "export function add(a: number, b: number) { return a + b; }\n" },
   );
   assert.equal(result.status, 0, result.stderr + result.stdout);
+  const body = JSON.parse(result.stdout);
+  assert.equal(body.ok, true);
+  assert.equal(body.findings.length, 0);
+  assert.deepEqual(body.lanes, ["complexity", "cognitive"]);
 });
 
 test("SARIF output includes runs[]", () => {
@@ -185,6 +200,101 @@ test("SARIF output includes runs[]", () => {
   assert.equal(body.version, "2.1.0");
   assert.ok(Array.isArray(body.runs));
   assert.ok(body.runs[0].results.length > 0);
+});
+
+for (const dir of PASS_ARCH) {
+  test(`golden pass (arch): ${dir}`, () => {
+    const result = run(["arch", dir, "--json"]);
+    assert.equal(result.status, 0, result.stderr + result.stdout);
+    const body = JSON.parse(result.stdout);
+    assert.equal(body.ok, true);
+    assert.equal(body.findings.length, 0);
+  });
+}
+
+for (const [dir, rule] of FAIL_ARCH) {
+  test(`golden fail (arch): ${dir}`, () => {
+    const result = run(["arch", dir, "--json"]);
+    assert.equal(result.status, 1, result.stderr + result.stdout);
+    const body = JSON.parse(result.stdout);
+    const hit = body.findings.find((f) => f.rule === rule);
+    assert.ok(hit, result.stdout);
+    assert.equal(hit.kind, "rule");
+    assert.equal(hit.lane, "architecture");
+    assert.equal(hit.tool, "dependency-cruiser");
+    assert.equal(hit.line, 1);
+    assert.equal(typeof hit.to, "string");
+    assert.notEqual(hit.to, "");
+  });
+}
+
+test("all includes architecture on a clean graph → 0", () => {
+  const result = run(["all", "fixtures/arch/pass-03-domain-only", "--json"]);
+  assert.equal(result.status, 0, result.stderr + result.stdout);
+  const body = JSON.parse(result.stdout);
+  assert.deepEqual(body.lanes, ["complexity", "cognitive", "architecture"]);
+  assert.equal(body.findings.length, 0);
+});
+
+test("all includes architecture on a forbidden edge → 1", () => {
+  const result = run(["all", "fixtures/arch/fail-01-domain-to-ui", "--json"]);
+  assert.equal(result.status, 1, result.stderr + result.stdout);
+  const body = JSON.parse(result.stdout);
+  assert.ok(body.lanes.includes("architecture"));
+  assert.ok(body.findings.some((f) => f.kind === "rule" && f.rule === "no-domain-to-ui"));
+});
+
+test("arch fail human line names the edge", () => {
+  const result = run(["arch", "fixtures/arch/fail-01-domain-to-ui"]);
+  assert.equal(result.status, 1, result.stderr + result.stdout);
+  assert.match(result.stdout, /→ .+ \[dependency-cruiser\]  no-domain-to-ui/);
+});
+
+test("arch --stdin-code → 2", () => {
+  const result = run(
+    ["arch", "--stdin-code", "--stdin-file-path", "snippet.ts"],
+    { input: "export function add(a: number, b: number) { return a + b; }\n" },
+  );
+  assert.equal(result.status, 2, result.stderr + result.stdout);
+});
+
+test("missing architecture rule file → 2", () => {
+  const result = spawnSync(
+    process.execPath,
+    [cli, "--config", "test/broken/missing-arch.json", "arch", "fixtures/pass/pass-01-add.ts"],
+    { cwd: root, encoding: "utf8" },
+  );
+  assert.equal(result.status, 2, result.stderr + result.stdout);
+});
+
+test("broken architecture rule file → 2", () => {
+  const result = spawnSync(
+    process.execPath,
+    [cli, "--config", "test/broken/throws-arch.json", "arch", "fixtures/arch/pass-03-domain-only"],
+    { cwd: root, encoding: "utf8" },
+  );
+  assert.equal(result.status, 2, result.stderr + result.stdout);
+});
+
+test("zero-module cruise → 2", () => {
+  const result = spawnSync(
+    process.execPath,
+    [cli, "--config", "test/broken/empty-cruise.json", "arch", "fixtures/arch/pass-01-ui-to-app"],
+    { cwd: root, encoding: "utf8" },
+  );
+  assert.equal(result.status, 2, result.stderr + result.stdout);
+  assert.match(`${result.stderr}${result.stdout}`, /0 modules/);
+});
+
+test("warn severity does not fail the architecture gate", () => {
+  const result = spawnSync(
+    process.execPath,
+    [cli, "--config", "test/broken/warn-arch.json", "arch", "fixtures/arch/pass-01-ui-to-app", "--json"],
+    { cwd: root, encoding: "utf8" },
+  );
+  assert.equal(result.status, 0, result.stderr + result.stdout);
+  const body = JSON.parse(result.stdout);
+  assert.equal(body.findings.length, 0);
 });
 
 test("unknown flag → 2", () => {

@@ -5,6 +5,7 @@ import { GateError } from "./errors.js";
 import { isJsTsFile, isLizardFile } from "./extensions.js";
 import { lanesFor } from "./lanes.js";
 import { reportFromFindings } from "./report.js";
+import { runDepcruise } from "./runners/depcruise.js";
 import { runEslintCognitive, runEslintCognitiveText } from "./runners/eslint-cognitive.js";
 import { runEslintComplexity, runEslintComplexityText } from "./runners/eslint-complexity.js";
 import { runLizard } from "./runners/lizard.js";
@@ -20,6 +21,23 @@ function usesEslintCyclo(config: AgentLintConfig, lanes: Lane[]): boolean {
 
 function usesCognitive(lanes: Lane[]): boolean {
   return lanes.includes("cognitive");
+}
+
+function usesArchitecture(lanes: Lane[]): boolean {
+  return lanes.includes("architecture");
+}
+
+function lanesForThisRun(args: CliArgs): Lane[] {
+  if (args.stdinCode && args.command === "arch") {
+    throw new GateError(
+      "arch does not accept --stdin-code. Architecture runs on files on disk.",
+    );
+  }
+  const lanes = lanesFor(args.command);
+  if (!args.stdinCode) {
+    return lanes;
+  }
+  return lanes.filter((lane) => lane !== "architecture");
 }
 
 function requireJsTs(filePath: string, abs: string, lane: string): void {
@@ -43,6 +61,11 @@ function assertLaneFiles(files: string[], config: AgentLintConfig, lanes: Lane[]
       "complexity lane has no applicable files (need JS/TS for ESLint, or install/enable lizard for other languages).",
     );
   }
+  if (lanes.includes("architecture") && !hasJsTs) {
+    throw new GateError(
+      "architecture lane requires JavaScript or TypeScript files (dependency-cruiser). No JS/TS files in the input set.",
+    );
+  }
 }
 
 function assertToolsEnabled(files: string[], config: AgentLintConfig, lanes: Lane[]): void {
@@ -51,7 +74,10 @@ function assertToolsEnabled(files: string[], config: AgentLintConfig, lanes: Lan
     throw new GateError("No supported source files found.");
   }
   const anyTool =
-    usesLizard(config, lanes) || usesEslintCyclo(config, lanes) || usesCognitive(lanes);
+    usesLizard(config, lanes) ||
+    usesEslintCyclo(config, lanes) ||
+    usesCognitive(lanes) ||
+    usesArchitecture(lanes);
   if (!anyTool) {
     throw new GateError("No lanes/tools enabled for this run.");
   }
@@ -61,6 +87,7 @@ async function runOnFiles(
   files: string[],
   config: AgentLintConfig,
   lanes: Lane[],
+  cwd: string,
 ): Promise<Finding[]> {
   assertLaneFiles(files, config, lanes);
   assertToolsEnabled(files, config, lanes);
@@ -73,6 +100,9 @@ async function runOnFiles(
   }
   if (usesCognitive(lanes)) {
     findings.push(...(await runEslintCognitive(files, config.cognitive.max)));
+  }
+  if (usesArchitecture(lanes)) {
+    findings.push(...(await runDepcruise(files, config.architecture.config, cwd)));
   }
   return findings;
 }
@@ -133,7 +163,7 @@ export async function runLint(
   stdinText: string | undefined,
   cwd = process.cwd(),
 ): Promise<LintReport> {
-  const lanes = lanesFor(args.command);
+  const lanes = lanesForThisRun(args);
   const thresholds = {
     cyclomatic: config.cyclomatic.max,
     cognitive: config.cognitive.max,
@@ -152,6 +182,6 @@ export async function runLint(
     throw new GateError("No supported source files found after applying ignore patterns.");
   }
 
-  const findings = await runOnFiles(files, config, lanes);
+  const findings = await runOnFiles(files, config, lanes, cwd);
   return reportFromFindings(findings, lanes, thresholds);
 }

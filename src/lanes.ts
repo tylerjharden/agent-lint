@@ -6,8 +6,10 @@ export function lanesFor(command: Command): Lane[] {
       return ["complexity"];
     case "cognitive":
       return ["cognitive"];
+    case "arch":
+      return ["architecture"];
     case "all":
-      return ["complexity", "cognitive"];
+      return ["complexity", "cognitive", "architecture"];
     default: {
       const exhaustive: never = command;
       throw new Error(`Unknown command: ${String(exhaustive)}`);

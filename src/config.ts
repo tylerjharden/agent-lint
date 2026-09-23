@@ -12,6 +12,7 @@ export const DEFAULT_IGNORE = [
   ".git/**",
 ];
 export const DEFAULT_CYCLO_TOOLS: CyclomaticTool[] = ["lizard", "eslint"];
+export const DEFAULT_ARCH_CONFIG = ".dependency-cruiser.cjs";
 
 const CONFIG_CANDIDATES = [
   "agent-lint.config.json",
@@ -27,6 +28,9 @@ interface RawConfig {
   cognitive?: {
     max?: unknown;
   };
+  architecture?: {
+    config?: unknown;
+  };
   ignore?: unknown;
   agentLint?: RawConfig;
 }
@@ -39,6 +43,9 @@ export function defaultConfig(): AgentLintConfig {
     },
     cognitive: {
       max: DEFAULT_COGNITIVE_MAX,
+    },
+    architecture: {
+      config: DEFAULT_ARCH_CONFIG,
     },
     ignore: [...DEFAULT_IGNORE],
   };
@@ -71,6 +78,23 @@ function parseTools(value: unknown): CyclomaticTool[] {
   return tools;
 }
 
+function parseArchitecture(value: unknown): { config: string } {
+  if (value === undefined) {
+    return { config: DEFAULT_ARCH_CONFIG };
+  }
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    throw new GateError("architecture must be an object");
+  }
+  const config = (value as { config?: unknown }).config;
+  if (config === undefined) {
+    return { config: DEFAULT_ARCH_CONFIG };
+  }
+  if (typeof config !== "string" || config.trim() === "") {
+    throw new GateError("architecture.config must be a non-empty string");
+  }
+  return { config };
+}
+
 function parseIgnore(value: unknown): string[] {
   if (value === undefined) {
     return [...DEFAULT_IGNORE];
@@ -97,6 +121,7 @@ export function parseConfigObject(raw: RawConfig): AgentLintConfig {
           ? DEFAULT_COGNITIVE_MAX
           : assertPositiveInt(body.cognitive.max, "cognitive.max"),
     },
+    architecture: parseArchitecture(body.architecture),
     ignore: parseIgnore(body.ignore),
   };
 }

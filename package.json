@@ -1,7 +1,7 @@
 {
   "name": "agent-lint",
   "version": "0.1.0",
-  "description": "Thin CLI wrapping cyclomatic (lizard + ESLint complexity) and cognitive (sonarjs) gates.",
+  "description": "Thin CLI wrapping cyclomatic (lizard + ESLint complexity), cognitive (sonarjs), and architecture (dependency-cruiser) gates.",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/tylerjharden/agent-lint.git"
@@ -19,6 +19,8 @@
     "README.md",
     "LICENSE",
     "agent-lint.config.json",
+    ".dependency-cruiser.cjs",
+    "templates",
     "requirements.txt"
   ],
   "engines": {
@@ -34,6 +36,7 @@
   },
   "dependencies": {
     "@typescript-eslint/parser": "^8.44.0",
+    "dependency-cruiser": "^18.4.0",
     "eslint": "^9.35.0"
   },
   "devDependencies": {

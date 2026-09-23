@@ -58,6 +58,7 @@ function findingFromRow(fields: string[], threshold: number): Finding | undefine
     return undefined;
   }
   return {
+    kind: "metric",
     lane: "complexity",
     tool: "lizard",
     rule: "lizard/cyclomatic",

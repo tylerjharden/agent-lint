@@ -2,7 +2,7 @@ import { ESLint, type Linter } from "eslint";
 import tsParser from "@typescript-eslint/parser";
 import { isJsTsFile } from "../extensions.js";
 import { GateError } from "../errors.js";
-import type { Finding, Lane, Metric, ToolName } from "../types.js";
+import type { MetricFinding, Metric, ToolName } from "../types.js";
 
 export function jsTsOnly(files: string[]): string[] {
   return files.filter(isJsTsFile);
@@ -76,14 +76,15 @@ export function findingFromMessage(opts: {
   line: number;
   message: string;
   rule: string;
-  lane: Lane;
-  tool: ToolName;
+  lane: "complexity" | "cognitive";
+  tool: Exclude<ToolName, "dependency-cruiser">;
   metric: Metric;
   value: number;
   threshold: number;
   functionName?: string;
-}): Finding {
+}): MetricFinding {
   return {
+    kind: "metric",
     lane: opts.lane,
     tool: opts.tool,
     rule: opts.rule,

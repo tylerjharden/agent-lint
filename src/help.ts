@@ -1,8 +1,8 @@
 export function helpText(): string {
-  return `agent-lint — cyclomatic + cognitive complexity gates
+  return `agent-lint — cyclomatic + cognitive + architecture gates
 
 Usage:
-  agent-lint [complexity|cognitive|all] [paths...] [options]
+  agent-lint [complexity|cognitive|arch|all] [paths...] [options]
   agent-lint [paths...]                  # same as "all"
   echo path.ts | agent-lint --stdin      # extra paths from stdin
   cat snippet.ts | agent-lint --stdin-code --stdin-file-path snippet.ts
@@ -10,7 +10,8 @@ Usage:
 Commands:
   complexity   Cyclomatic only (lizard + ESLint complexity)
   cognitive    Cognitive only (eslint-plugin-sonarjs)
-  all          Both lanes (default)
+  arch         Architecture only (dependency-cruiser)
+  all          All three lanes (default)
 
 Options:
   --config <path>              Config file (default: agent-lint.config.json)
@@ -27,12 +28,12 @@ Options:
 
 Exit codes:
   0  pass
-  1  fail (threshold breach)
+  1  fail (threshold or architecture rule breach)
   2  error (tool or config broken — never a soft pass)
 
 Examples:
   npx agent-lint all src
-  node bin/agent-lint.js complexity fixtures/pass --json
+  node bin/agent-lint.js arch src --json
   node dist/cli.js cognitive src --format sarif
 `;
 }
