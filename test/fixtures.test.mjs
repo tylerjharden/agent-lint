@@ -276,6 +276,16 @@ test("broken architecture rule file → 2", () => {
   assert.equal(result.status, 2, result.stderr + result.stdout);
 });
 
+test("zero-module cruise → 2", () => {
+  const result = spawnSync(
+    process.execPath,
+    [cli, "--config", "test/broken/empty-cruise.json", "arch", "fixtures/arch/pass-01-ui-to-app"],
+    { cwd: root, encoding: "utf8" },
+  );
+  assert.equal(result.status, 2, result.stderr + result.stdout);
+  assert.match(`${result.stderr}${result.stdout}`, /0 modules/);
+});
+
 test("warn severity does not fail the architecture gate", () => {
   const result = spawnSync(
     process.execPath,

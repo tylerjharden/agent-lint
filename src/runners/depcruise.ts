@@ -13,7 +13,9 @@ type CruiseViolation = {
   comment?: string;
 };
 
-function requireCruiseResult(output: unknown): { summary: { violations: CruiseViolation[] } } {
+function requireCruiseResult(output: unknown): {
+  summary: { violations: CruiseViolation[]; totalCruised?: number };
+} {
   if (output === null || typeof output !== "object" || !("summary" in output)) {
     throw new GateError("dependency-cruiser returned a report that is not a cruise result object");
   }
@@ -25,7 +27,20 @@ function requireCruiseResult(output: unknown): { summary: { violations: CruiseVi
   if (!Array.isArray(violations)) {
     throw new GateError("dependency-cruiser summary.violations is not an array");
   }
-  return output as { summary: { violations: CruiseViolation[] } };
+  return output as { summary: { violations: CruiseViolation[]; totalCruised?: number } };
+}
+
+function requireCruisedModules(output: unknown): {
+  summary: { violations: CruiseViolation[]; totalCruised?: number };
+} {
+  const cruiseResult = requireCruiseResult(output);
+  const total = cruiseResult.summary.totalCruised ?? 0;
+  if (!Number.isInteger(total) || total < 1) {
+    throw new GateError(
+      "dependency-cruiser cruised 0 modules. Architecture cannot pass without a module graph.",
+    );
+  }
+  return cruiseResult;
 }
 
 function ruleName(violation: CruiseViolation): string {
@@ -82,7 +97,7 @@ function transpileFor(
 }
 
 function findingsFromOutput(output: unknown): RuleFinding[] {
-  const cruiseResult = requireCruiseResult(output);
+  const cruiseResult = requireCruisedModules(output);
   const findings: RuleFinding[] = [];
   for (const violation of cruiseResult.summary.violations) {
     const finding = findingFromViolation(violation);
