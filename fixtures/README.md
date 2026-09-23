@@ -1,6 +1,6 @@
 # Golden fixtures
 
-Shared pass set covers **both** lanes. Fail fixtures are labeled by lane in the filename.
+Shared pass set covers **complexity and cognitive**. Architecture fixtures are small module graphs under `arch/`. Fail fixtures are labeled by lane in the filename or directory name.
 
 | Path | Lane | Expected CLI |
 |------|------|----------------|
@@ -15,5 +15,11 @@ Shared pass set covers **both** lanes. Fail fixtures are labeled by lane in the 
 | `fail/fail-cog-01-deep-nest.ts` | cognitive | exit 1 |
 | `fail/fail-cog-02-nested-loops.ts` | cognitive | exit 1 |
 | `fail/fail-cog-03-mixed-control.ts` | cognitive | exit 1 |
+| `arch/pass-01-ui-to-app` | architecture (ui to app to domain) | exit 0 |
+| `arch/pass-02-app-to-domain` | architecture (app to domain) | exit 0 |
+| `arch/pass-03-domain-only` | architecture (domain, no upward import) | exit 0 |
+| `arch/fail-01-domain-to-ui` | architecture (domain imports ui) | exit 1 |
+| `arch/fail-02-circular` | architecture (circular pair) | exit 1 |
+| `arch/fail-03-app-to-ui` | architecture (app imports ui) | exit 1 |
 
-Thresholds: `fixtures/agent-lint.config.json` (cyclomatic max 10, cognitive max 15).
+Thresholds: `fixtures/agent-lint.config.json` (cyclomatic max 10, cognitive max 15). Architecture rules: `fixtures/arch/.dependency-cruiser.cjs`.

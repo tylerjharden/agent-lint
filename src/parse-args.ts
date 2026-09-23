@@ -1,7 +1,7 @@
 import { GateError } from "./errors.js";
 import type { CliArgs, Command, Format } from "./types.js";
 
-const COMMANDS: readonly Command[] = ["complexity", "cognitive", "all"];
+const COMMANDS: readonly Command[] = ["complexity", "cognitive", "arch", "all"];
 
 function isCommand(value: string): value is Command {
   return (COMMANDS as readonly string[]).includes(value);

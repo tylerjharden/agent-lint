@@ -1,6 +1,14 @@
 import { relative } from "node:path";
 import { EXIT_ERROR, EXIT_FAIL, EXIT_PASS, type ExitCode } from "./exit.js";
-import type { Finding, Format, Lane, LintReport, Thresholds } from "./types.js";
+import type {
+  Finding,
+  Format,
+  Lane,
+  LintReport,
+  MetricFinding,
+  RuleFinding,
+  Thresholds,
+} from "./types.js";
 import { packageVersion } from "./version.js";
 
 export function displayPath(file: string, cwd = process.cwd()): string {
@@ -11,25 +19,67 @@ export function displayPath(file: string, cwd = process.cwd()): string {
   return rel;
 }
 
-function formatFindingLine(finding: Finding, cwd: string): string {
+function formatMetricLine(finding: MetricFinding, cwd: string): string {
   const file = displayPath(finding.file, cwd);
   const fn = finding.functionName ? `  ${finding.functionName}` : "";
   return `${file}:${finding.line}${fn}  ${finding.metric} ${finding.value} > ${finding.threshold}  [${finding.tool}]  ${finding.message}`;
 }
 
-export function formatHuman(report: LintReport, cwd = process.cwd()): string {
-  const lines: string[] = [
+function formatRuleLine(finding: RuleFinding, cwd: string): string {
+  const file = displayPath(finding.file, cwd);
+  const to = finding.to === undefined ? "" : `  -> ${displayPath(finding.to, cwd)}`;
+  return `${file}:${finding.line}${to}  [${finding.tool}]  ${finding.rule}  ${finding.message}`;
+}
+
+function formatFindingLine(finding: Finding, cwd: string): string {
+  switch (finding.kind) {
+    case "metric":
+      return formatMetricLine(finding, cwd);
+    case "rule":
+      return formatRuleLine(finding, cwd);
+    default: {
+      const exhaustive: never = finding;
+      throw new Error(`Unknown finding: ${String(exhaustive)}`);
+    }
+  }
+}
+
+function humanHeader(report: LintReport): string[] {
+  const lines = [
     `agent-lint  (${report.lanes.join(" + ") || "none"})`,
     `cyclomatic max: ${report.thresholds.cyclomatic}`,
     `cognitive max: ${report.thresholds.cognitive}`,
-    "",
   ];
-  if (report.errors.length > 0) {
-    for (const error of report.errors) {
-      lines.push(`error: ${error}`);
-    }
-    lines.push("");
+  if (report.lanes.includes("architecture")) {
+    lines.push("architecture: dependency-cruiser");
   }
+  lines.push("");
+  return lines;
+}
+
+function appendErrors(lines: string[], errors: string[]): void {
+  if (errors.length === 0) {
+    return;
+  }
+  for (const error of errors) {
+    lines.push(`error: ${error}`);
+  }
+  lines.push("");
+}
+
+function humanFooter(report: LintReport): string | undefined {
+  if (report.exitCode === EXIT_FAIL) {
+    return `${report.findings.length} finding(s). FAIL`;
+  }
+  if (report.exitCode === EXIT_ERROR) {
+    return "ERROR";
+  }
+  return undefined;
+}
+
+export function formatHuman(report: LintReport, cwd = process.cwd()): string {
+  const lines = humanHeader(report);
+  appendErrors(lines, report.errors);
   if (report.findings.length === 0 && report.exitCode === EXIT_PASS) {
     lines.push("0 finding(s). PASS");
     return `${lines.join("\n")}\n`;
@@ -37,11 +87,10 @@ export function formatHuman(report: LintReport, cwd = process.cwd()): string {
   for (const finding of report.findings) {
     lines.push(formatFindingLine(finding, cwd));
   }
-  if (report.exitCode === EXIT_FAIL) {
+  const footer = humanFooter(report);
+  if (footer !== undefined) {
     lines.push("");
-    lines.push(`${report.findings.length} finding(s). FAIL`);
-  } else if (report.exitCode === EXIT_ERROR) {
-    lines.push("ERROR");
+    lines.push(footer);
   }
   return `${lines.join("\n")}\n`;
 }
@@ -74,11 +123,39 @@ interface SarifResult {
   properties: {
     lane: Lane;
     tool: string;
-    metric: string;
-    value: number;
-    threshold: number;
+    kind: "metric" | "rule";
+    metric?: string;
+    value?: number;
+    threshold?: number;
     functionName?: string;
+    to?: string;
   };
+}
+
+function sarifProperties(finding: Finding, cwd: string): SarifResult["properties"] {
+  switch (finding.kind) {
+    case "metric":
+      return {
+        lane: finding.lane,
+        tool: finding.tool,
+        kind: "metric",
+        metric: finding.metric,
+        value: finding.value,
+        threshold: finding.threshold,
+        functionName: finding.functionName,
+      };
+    case "rule":
+      return {
+        lane: finding.lane,
+        tool: finding.tool,
+        kind: "rule",
+        to: finding.to === undefined ? undefined : displayPath(finding.to, cwd),
+      };
+    default: {
+      const exhaustive: never = finding;
+      throw new Error(`Unknown finding: ${String(exhaustive)}`);
+    }
+  }
 }
 
 function toSarifResult(finding: Finding, cwd: string): SarifResult {
@@ -94,14 +171,7 @@ function toSarifResult(finding: Finding, cwd: string): SarifResult {
         },
       },
     ],
-    properties: {
-      lane: finding.lane,
-      tool: finding.tool,
-      metric: finding.metric,
-      value: finding.value,
-      threshold: finding.threshold,
-      functionName: finding.functionName,
-    },
+    properties: sarifProperties(finding, cwd),
   };
 }
 
@@ -128,6 +198,10 @@ export function formatSarif(report: LintReport, cwd = process.cwd()): string {
               {
                 id: "lizard/cyclomatic",
                 shortDescription: { text: "Cyclomatic complexity (lizard)" },
+              },
+              {
+                id: "dependency-cruiser",
+                shortDescription: { text: "Architecture dependency rule (dependency-cruiser)" },
               },
             ],
           },

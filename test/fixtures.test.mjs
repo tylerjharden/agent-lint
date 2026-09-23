@@ -26,6 +26,16 @@ const FAIL_COG = [
   "fixtures/fail/fail-cog-02-nested-loops.ts",
   "fixtures/fail/fail-cog-03-mixed-control.ts",
 ];
+const PASS_ARCH = [
+  "fixtures/arch/pass-01-ui-to-app",
+  "fixtures/arch/pass-02-app-to-domain",
+  "fixtures/arch/pass-03-domain-only",
+];
+const FAIL_ARCH = [
+  "fixtures/arch/fail-01-domain-to-ui",
+  "fixtures/arch/fail-02-circular",
+  "fixtures/arch/fail-03-app-to-ui",
+];
 
 function run(args, options = {}) {
   return spawnSync(process.execPath, [cli, "--config", fixtureConfig, ...args], {
@@ -185,6 +195,42 @@ test("SARIF output includes runs[]", () => {
   assert.equal(body.version, "2.1.0");
   assert.ok(Array.isArray(body.runs));
   assert.ok(body.runs[0].results.length > 0);
+});
+
+for (const dir of PASS_ARCH) {
+  test(`golden pass (arch): ${dir}`, () => {
+    const result = run(["arch", dir, "--json"]);
+    assert.equal(result.status, 0, result.stderr + result.stdout);
+    const body = JSON.parse(result.stdout);
+    assert.equal(body.ok, true);
+    assert.equal(body.findings.length, 0);
+  });
+}
+
+for (const dir of FAIL_ARCH) {
+  test(`golden fail (arch): ${dir}`, () => {
+    const result = run(["arch", dir, "--json"]);
+    assert.equal(result.status, 1, result.stderr + result.stdout);
+    const body = JSON.parse(result.stdout);
+    assert.ok(body.findings.some((f) => f.lane === "architecture" && f.tool === "dependency-cruiser"));
+  });
+}
+
+test("arch --stdin-code → 2", () => {
+  const result = run(
+    ["arch", "--stdin-code", "--stdin-file-path", "snippet.ts"],
+    { input: "export function add(a: number, b: number) { return a + b; }\n" },
+  );
+  assert.equal(result.status, 2, result.stderr + result.stdout);
+});
+
+test("missing architecture rule file → 2", () => {
+  const result = spawnSync(
+    process.execPath,
+    [cli, "--config", "test/broken/missing-arch.json", "arch", "fixtures/pass/pass-01-add.ts"],
+    { cwd: root, encoding: "utf8" },
+  );
+  assert.equal(result.status, 2, result.stderr + result.stdout);
 });
 
 test("unknown flag → 2", () => {

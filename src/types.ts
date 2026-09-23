@@ -1,15 +1,16 @@
 import type { ExitCode } from "./exit.js";
 
-export type Command = "complexity" | "cognitive" | "all";
+export type Command = "complexity" | "cognitive" | "arch" | "all";
 export type Format = "human" | "json" | "sarif";
-export type Lane = "complexity" | "cognitive";
-export type ToolName = "lizard" | "eslint" | "sonarjs";
+export type Lane = "complexity" | "cognitive" | "architecture";
+export type ToolName = "lizard" | "eslint" | "sonarjs" | "dependency-cruiser";
 export type Metric = "cyclomatic" | "cognitive";
 export type CyclomaticTool = "lizard" | "eslint";
 
-export interface Finding {
-  lane: Lane;
-  tool: ToolName;
+export interface MetricFinding {
+  kind: "metric";
+  lane: "complexity" | "cognitive";
+  tool: "lizard" | "eslint" | "sonarjs";
   rule: string;
   file: string;
   line: number;
@@ -19,6 +20,19 @@ export interface Finding {
   threshold: number;
   message: string;
 }
+
+export interface RuleFinding {
+  kind: "rule";
+  lane: "architecture";
+  tool: "dependency-cruiser";
+  rule: string;
+  file: string;
+  line: number;
+  to?: string;
+  message: string;
+}
+
+export type Finding = MetricFinding | RuleFinding;
 
 export interface Thresholds {
   cyclomatic: number;
@@ -41,6 +55,9 @@ export interface AgentLintConfig {
   };
   cognitive: {
     max: number;
+  };
+  architecture: {
+    config: string;
   };
   ignore: string[];
 }

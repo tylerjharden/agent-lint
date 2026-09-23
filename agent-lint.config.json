@@ -6,6 +6,9 @@
   "cognitive": {
     "max": 15
   },
+  "architecture": {
+    "config": ".dependency-cruiser.cjs"
+  },
   "ignore": [
     "node_modules/**",
     "dist/**",
