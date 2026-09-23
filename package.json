@@ -1,7 +1,7 @@
 {
   "name": "agent-lint",
   "version": "0.1.0",
-  "description": "Thin CLI wrapping cyclomatic (lizard + ESLint complexity), cognitive (sonarjs), and architecture (dependency-cruiser) gates.",
+  "description": "Thin CLI wrapping cyclomatic (lizard + ESLint complexity), cognitive (sonarjs), architecture (dependency-cruiser), and mutation (StrykerJS) gates.",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/tylerjharden/agent-lint.git"
@@ -35,6 +35,7 @@
     "lint:self": "node dist/cli.js all src --format human"
   },
   "dependencies": {
+    "@stryker-mutator/core": "^9.6.1",
     "@typescript-eslint/parser": "^8.44.0",
     "dependency-cruiser": "^18.4.0",
     "eslint": "^9.35.0"

@@ -5,7 +5,14 @@ import { isJsTsFile, isLizardFile } from "./extensions.js";
 import { matchesIgnore } from "./ignore.js";
 import { applyScope } from "./scope.js";
 
-const SKIP_DIR_NAMES = new Set(["node_modules", ".git", "dist", "coverage"]);
+const SKIP_DIR_NAMES = new Set([
+  "node_modules",
+  ".git",
+  "dist",
+  "coverage",
+  "reports",
+  ".stryker-tmp",
+]);
 
 function toPosix(rel: string): string {
   return rel.split(sep).join("/");

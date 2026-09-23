@@ -31,6 +31,9 @@ interface RawConfig {
   architecture?: {
     config?: unknown;
   };
+  mutation?: {
+    config?: unknown;
+  };
   ignore?: unknown;
   agentLint?: RawConfig;
 }
@@ -95,6 +98,20 @@ function parseArchitecture(value: unknown): { config: string } {
   return { config };
 }
 
+function parseMutation(value: unknown): { config: string } | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    throw new GateError("mutation must be an object");
+  }
+  const config = (value as { config?: unknown }).config;
+  if (typeof config !== "string" || config.trim() === "") {
+    throw new GateError("mutation.config must be a non-empty string");
+  }
+  return { config };
+}
+
 function parseIgnore(value: unknown): string[] {
   if (value === undefined) {
     return [...DEFAULT_IGNORE];
@@ -122,6 +139,7 @@ export function parseConfigObject(raw: RawConfig): AgentLintConfig {
           : assertPositiveInt(body.cognitive.max, "cognitive.max"),
     },
     architecture: parseArchitecture(body.architecture),
+    mutation: parseMutation(body.mutation),
     ignore: parseIgnore(body.ignore),
   };
 }
