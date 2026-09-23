@@ -172,13 +172,34 @@ async function withConfigCwd<T>(workdir: string, run: () => Promise<T>): Promise
   }
 }
 
+async function withStrykerProcessIsolation<T>(run: () => Promise<T>): Promise<T> {
+  // Nested `node --test` inherits NODE_TEST_CONTEXT and will not score the fixture.
+  const testContext = process.env.NODE_TEST_CONTEXT;
+  delete process.env.NODE_TEST_CONTEXT;
+  const stdoutWrite = process.stdout.write.bind(process.stdout);
+  process.stdout.write = ((..._args: Parameters<typeof process.stdout.write>) =>
+    true) as typeof process.stdout.write;
+  try {
+    return await run();
+  } finally {
+    process.stdout.write = stdoutWrite;
+    if (testContext === undefined) {
+      delete process.env.NODE_TEST_CONTEXT;
+    } else {
+      process.env.NODE_TEST_CONTEXT = testContext;
+    }
+  }
+}
+
 export async function runStryker(
   configPath: string,
   cwd = process.cwd(),
 ): Promise<MutationRunResult> {
   const resolved = requireMutationFile(configPath, cwd);
   try {
-    return await withConfigCwd(dirname(resolved), () => runInConfigDir(resolved));
+    return await withStrykerProcessIsolation(() =>
+      withConfigCwd(dirname(resolved), () => runInConfigDir(resolved)),
+    );
   } catch (cause) {
     wrapStrykerError(cause);
   }
