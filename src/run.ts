@@ -27,17 +27,17 @@ function usesArchitecture(lanes: Lane[]): boolean {
   return lanes.includes("architecture");
 }
 
-function assertArchAllowsStdinCode(config: AgentLintConfig, lanes: Lane[]): void {
-  if (!usesArchitecture(lanes)) {
-    return;
-  }
-  const otherLane =
-    usesLizard(config, lanes) || usesEslintCyclo(config, lanes) || usesCognitive(lanes);
-  if (!otherLane) {
+function lanesForThisRun(args: CliArgs): Lane[] {
+  if (args.stdinCode && args.command === "arch") {
     throw new GateError(
-      "architecture lane needs files on disk (a module graph), not --stdin-code",
+      "arch does not accept --stdin-code. Architecture runs on files on disk.",
     );
   }
+  const lanes = lanesFor(args.command);
+  if (!args.stdinCode) {
+    return lanes;
+  }
+  return lanes.filter((lane) => lane !== "architecture");
 }
 
 function requireJsTs(filePath: string, abs: string, lane: string): void {
@@ -87,6 +87,7 @@ async function runOnFiles(
   files: string[],
   config: AgentLintConfig,
   lanes: Lane[],
+  cwd: string,
 ): Promise<Finding[]> {
   assertLaneFiles(files, config, lanes);
   assertToolsEnabled(files, config, lanes);
@@ -101,7 +102,7 @@ async function runOnFiles(
     findings.push(...(await runEslintCognitive(files, config.cognitive.max)));
   }
   if (usesArchitecture(lanes)) {
-    findings.push(...(await runDepcruise(files, config.architecture.config)));
+    findings.push(...(await runDepcruise(files, config.architecture.config, cwd)));
   }
   return findings;
 }
@@ -131,7 +132,6 @@ async function runOnStdinCode(
   config: AgentLintConfig,
   lanes: Lane[],
 ): Promise<Finding[]> {
-  assertArchAllowsStdinCode(config, lanes);
   const abs = resolve(filePath);
   const temp = usesLizard(config, lanes) ? writeTempSource(code, filePath) : undefined;
   try {
@@ -163,7 +163,7 @@ export async function runLint(
   stdinText: string | undefined,
   cwd = process.cwd(),
 ): Promise<LintReport> {
-  const lanes = lanesFor(args.command);
+  const lanes = lanesForThisRun(args);
   const thresholds = {
     cyclomatic: config.cyclomatic.max,
     cognitive: config.cognitive.max,
@@ -182,6 +182,6 @@ export async function runLint(
     throw new GateError("No supported source files found after applying ignore patterns.");
   }
 
-  const findings = await runOnFiles(files, config, lanes);
+  const findings = await runOnFiles(files, config, lanes, cwd);
   return reportFromFindings(findings, lanes, thresholds);
 }

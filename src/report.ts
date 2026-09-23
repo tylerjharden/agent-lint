@@ -27,8 +27,8 @@ function formatMetricLine(finding: MetricFinding, cwd: string): string {
 
 function formatRuleLine(finding: RuleFinding, cwd: string): string {
   const file = displayPath(finding.file, cwd);
-  const to = finding.to === undefined ? "" : `  -> ${displayPath(finding.to, cwd)}`;
-  return `${file}:${finding.line}${to}  [${finding.tool}]  ${finding.rule}  ${finding.message}`;
+  const to = finding.to === undefined ? "" : displayPath(finding.to, cwd);
+  return `${file}:${finding.line}  → ${to}  [${finding.tool}]  ${finding.rule}  ${finding.message}`;
 }
 
 function formatFindingLine(finding: Finding, cwd: string): string {
@@ -95,16 +95,30 @@ export function formatHuman(report: LintReport, cwd = process.cwd()): string {
   return `${lines.join("\n")}\n`;
 }
 
+function findingForJson(finding: Finding, cwd: string): Finding {
+  switch (finding.kind) {
+    case "metric":
+      return { ...finding, file: displayPath(finding.file, cwd) };
+    case "rule":
+      return {
+        ...finding,
+        file: displayPath(finding.file, cwd),
+        to: finding.to === undefined ? undefined : displayPath(finding.to, cwd),
+      };
+    default: {
+      const exhaustive: never = finding;
+      throw new Error(`Unknown finding: ${String(exhaustive)}`);
+    }
+  }
+}
+
 export function formatJson(report: LintReport, cwd = process.cwd()): string {
   const body = {
     ok: report.ok,
     exitCode: report.exitCode,
     lanes: report.lanes,
     thresholds: report.thresholds,
-    findings: report.findings.map((finding) => ({
-      ...finding,
-      file: displayPath(finding.file, cwd),
-    })),
+    findings: report.findings.map((finding) => findingForJson(finding, cwd)),
     errors: report.errors,
   };
   return `${JSON.stringify(body, null, 2)}\n`;
@@ -129,7 +143,21 @@ interface SarifResult {
     threshold?: number;
     functionName?: string;
     to?: string;
+    rule?: string;
   };
+}
+
+function sarifRuleId(finding: Finding): string {
+  switch (finding.kind) {
+    case "metric":
+      return finding.rule;
+    case "rule":
+      return "dependency-cruiser";
+    default: {
+      const exhaustive: never = finding;
+      throw new Error(`Unknown finding: ${String(exhaustive)}`);
+    }
+  }
 }
 
 function sarifProperties(finding: Finding, cwd: string): SarifResult["properties"] {
@@ -149,6 +177,7 @@ function sarifProperties(finding: Finding, cwd: string): SarifResult["properties
         lane: finding.lane,
         tool: finding.tool,
         kind: "rule",
+        rule: finding.rule,
         to: finding.to === undefined ? undefined : displayPath(finding.to, cwd),
       };
     default: {
@@ -160,7 +189,7 @@ function sarifProperties(finding: Finding, cwd: string): SarifResult["properties
 
 function toSarifResult(finding: Finding, cwd: string): SarifResult {
   return {
-    ruleId: finding.rule,
+    ruleId: sarifRuleId(finding),
     level: "error",
     message: { text: finding.message },
     locations: [

@@ -77,7 +77,7 @@ node bin/agent-lint.js all src --json
 node bin/agent-lint.js all src --sarif
 ```
 
-`--stdin-code` runs the complexity lanes only. A snippet has no module graph. `arch --stdin-code` exits **2**.
+`--stdin-code` runs cyclomatic and cognitive only. It skips architecture because a snippet has no module graph. `arch --stdin-code` exits **2**.
 
 CI-ready invocations (same binary):
 

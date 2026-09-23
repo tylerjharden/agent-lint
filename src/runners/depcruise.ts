@@ -1,9 +1,10 @@
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
+import type { ICruiseOptions } from "dependency-cruiser";
 import { GateError } from "../errors.js";
 import { isJsTsFile } from "../extensions.js";
 import type { RuleFinding } from "../types.js";
-import { loadDepcruise, type DepcruiseApi, type DepcruiseOptions } from "./load-depcruise.js";
+import { loadDepcruise, type DepcruiseApi } from "./load-depcruise.js";
 
 type CruiseViolation = {
   from: string;
@@ -62,9 +63,15 @@ function requireArchConfig(configPath: string, cwd: string): string {
   return resolved;
 }
 
+function withoutReporter(options: ICruiseOptions): ICruiseOptions {
+  const next = { ...options };
+  delete next.outputType;
+  return next;
+}
+
 function transpileFor(
   api: DepcruiseApi,
-  options: DepcruiseOptions,
+  options: ICruiseOptions,
   cwd: string,
 ): { tsConfig: unknown } | undefined {
   const tsName = options.tsConfig?.fileName;
@@ -101,7 +108,8 @@ async function cruiseTargets(
 ): Promise<RuleFinding[]> {
   const api = await loadDepcruise();
   try {
-    const options = await api.extractDepcruiseOptions(resolved);
+    const loaded = await api.extractDepcruiseOptions(resolved);
+    const options = withoutReporter(loaded);
     const result = await api.cruise(targets, options, undefined, transpileFor(api, options, cwd));
     return findingsFromOutput(result.output);
   } catch (cause) {

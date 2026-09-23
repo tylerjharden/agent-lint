@@ -1,0 +1,6 @@
+{
+  "cyclomatic": { "max": 10, "tools": ["eslint"] },
+  "cognitive": { "max": 15 },
+  "architecture": { "config": "test/broken/warn-arch.cjs" },
+  "ignore": ["node_modules/**", "dist/**"]
+}
