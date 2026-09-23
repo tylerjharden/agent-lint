@@ -53,6 +53,7 @@ test("help exits 0", () => {
   assert.equal(result.status, 0);
   assert.match(result.stdout, /agent-lint/);
   assert.match(result.stdout, /mutation/);
+  assert.match(result.stdout, /perf/);
 });
 
 test("node bin/agent-lint.js --version exits 0", () => {
@@ -468,6 +469,187 @@ test("invalid Stryker JSON → 2", () => {
     "test/broken/not-json-mutation.json",
     "mutation",
     "fixtures/mutation/pass-01-add",
+  ]);
+  assert.equal(result.status, 2, result.stderr + result.stdout);
+});
+
+function runPerf(args, options = {}) {
+  return spawnSync(process.execPath, [cli, ...args], {
+    cwd: root,
+    encoding: "utf8",
+    ...options,
+  });
+}
+
+test("perf on a healthy fixture → 0", () => {
+  const result = runPerf([
+    "--config",
+    "test/perf-enabled.json",
+    "perf",
+    "fixtures/perf/pass-01-add",
+    "--json",
+  ]);
+  assert.equal(result.status, 0, result.stderr + result.stdout);
+  const body = JSON.parse(result.stdout);
+  assert.equal(body.ok, true);
+  assert.equal(body.findings.length, 0);
+  assert.ok(body.lanes.includes("perf"));
+  assert.equal(body.thresholds.perf, 1);
+});
+
+test("perf regression vs baseline → 1", () => {
+  const result = runPerf([
+    "--config",
+    "test/perf-fail.json",
+    "perf",
+    "fixtures/perf/fail-01-regression",
+    "--json",
+  ]);
+  assert.equal(result.status, 1, result.stderr + result.stdout);
+  const body = JSON.parse(result.stdout);
+  assert.equal(body.findings.length, 1);
+  const finding = body.findings[0];
+  assert.equal(finding.kind, "timing");
+  assert.equal(finding.lane, "perf");
+  assert.equal(finding.tool, "vitest");
+  assert.equal(finding.rule, "perf-regression");
+  assert.equal(finding.bench, "add");
+  assert.equal(finding.baseline, 1e-12);
+  assert.ok(finding.value > finding.threshold);
+});
+
+test("perf fail human line uses >", () => {
+  const result = runPerf([
+    "--config",
+    "test/perf-fail.json",
+    "perf",
+    "fixtures/perf/fail-01-regression",
+  ]);
+  assert.equal(result.status, 1, result.stderr + result.stdout);
+  assert.match(result.stdout, /add mean .+ > .+ \[vitest\]/);
+});
+
+test("zero benches → 2", () => {
+  const result = runPerf([
+    "--config",
+    "test/perf-empty.json",
+    "perf",
+    "fixtures/perf/empty-01-no-benches",
+  ]);
+  assert.equal(result.status, 2, result.stderr + result.stdout);
+  assert.match(`${result.stderr}${result.stdout}`, /unscorable|0 benches|no bench/i);
+});
+
+test("all without perf.config does not start Vitest bench", () => {
+  const result = run(["all", "fixtures/pass", "--json"]);
+  assert.equal(result.status, 0, result.stderr + result.stdout);
+  const body = JSON.parse(result.stdout);
+  assert.deepEqual(body.lanes, ["complexity", "cognitive", "architecture"]);
+});
+
+test("all with perf.config includes perf → 0", () => {
+  const result = runPerf([
+    "--config",
+    "test/perf-enabled.json",
+    "all",
+    "fixtures/pass",
+    "--json",
+  ]);
+  assert.equal(result.status, 0, result.stderr + result.stdout);
+  const body = JSON.parse(result.stdout);
+  assert.deepEqual(body.lanes, ["complexity", "cognitive", "architecture", "perf"]);
+  assert.equal(body.findings.length, 0);
+});
+
+test("all --stdin-code skips perf even when configured", () => {
+  const result = runPerf(
+    [
+      "--config",
+      "test/perf-enabled.json",
+      "all",
+      "--stdin-code",
+      "--stdin-file-path",
+      "snippet.ts",
+      "--json",
+    ],
+    { input: "export function add(a: number, b: number) { return a + b; }\n" },
+  );
+  assert.equal(result.status, 0, result.stderr + result.stdout);
+  const body = JSON.parse(result.stdout);
+  assert.deepEqual(body.lanes, ["complexity", "cognitive"]);
+});
+
+test("perf --stdin-code → 2", () => {
+  const result = runPerf(
+    [
+      "--config",
+      "test/perf-enabled.json",
+      "perf",
+      "--stdin-code",
+      "--stdin-file-path",
+      "snippet.ts",
+    ],
+    { input: "export function add(a: number, b: number) { return a + b; }\n" },
+  );
+  assert.equal(result.status, 2, result.stderr + result.stdout);
+});
+
+test("missing perf config file → 2", () => {
+  const result = runPerf([
+    "--config",
+    "test/broken/missing-perf.json",
+    "perf",
+    "fixtures/perf/pass-01-add",
+  ]);
+  assert.equal(result.status, 2, result.stderr + result.stdout);
+});
+
+test("perf.config unset on explicit perf → 2", () => {
+  const result = runPerf([
+    "--config",
+    "test/broken/no-perf-key.json",
+    "perf",
+    "fixtures/perf/pass-01-add",
+  ]);
+  assert.equal(result.status, 2, result.stderr + result.stdout);
+});
+
+test("empty perf.config → 2", () => {
+  const result = runPerf([
+    "--config",
+    "test/broken/empty-perf-config.json",
+    "perf",
+    "fixtures/perf/pass-01-add",
+  ]);
+  assert.equal(result.status, 2, result.stderr + result.stdout);
+});
+
+test("broken Vitest config file → 2", () => {
+  const result = runPerf([
+    "--config",
+    "test/broken/throws-perf.json",
+    "perf",
+    "fixtures/perf/pass-01-add",
+  ]);
+  assert.equal(result.status, 2, result.stderr + result.stdout);
+});
+
+test("invalid perf JSON → 2", () => {
+  const result = runPerf([
+    "--config",
+    "test/broken/not-json-perf.json",
+    "perf",
+    "fixtures/perf/pass-01-add",
+  ]);
+  assert.equal(result.status, 2, result.stderr + result.stdout);
+});
+
+test("missing baseline → 2", () => {
+  const result = runPerf([
+    "--config",
+    "test/broken/missing-baseline.json",
+    "perf",
+    "fixtures/perf/pass-01-add",
   ]);
   assert.equal(result.status, 2, result.stderr + result.stdout);
 });

@@ -34,6 +34,9 @@ interface RawConfig {
   mutation?: {
     config?: unknown;
   };
+  perf?: {
+    config?: unknown;
+  };
   ignore?: unknown;
   agentLint?: RawConfig;
 }
@@ -98,18 +101,29 @@ function parseArchitecture(value: unknown): { config: string } {
   return { config };
 }
 
-function parseMutation(value: unknown): { config: string } | undefined {
+function parseOptionalConfigBlock(
+  value: unknown,
+  label: string,
+): { config: string } | undefined {
   if (value === undefined) {
     return undefined;
   }
   if (value === null || typeof value !== "object" || Array.isArray(value)) {
-    throw new GateError("mutation must be an object");
+    throw new GateError(`${label} must be an object`);
   }
   const config = (value as { config?: unknown }).config;
   if (typeof config !== "string" || config.trim() === "") {
-    throw new GateError("mutation.config must be a non-empty string");
+    throw new GateError(`${label}.config must be a non-empty string`);
   }
   return { config };
+}
+
+function parseMutation(value: unknown): { config: string } | undefined {
+  return parseOptionalConfigBlock(value, "mutation");
+}
+
+function parsePerf(value: unknown): { config: string } | undefined {
+  return parseOptionalConfigBlock(value, "perf");
 }
 
 function parseIgnore(value: unknown): string[] {
@@ -140,6 +154,7 @@ export function parseConfigObject(raw: RawConfig): AgentLintConfig {
     },
     architecture: parseArchitecture(body.architecture),
     mutation: parseMutation(body.mutation),
+    perf: parsePerf(body.perf),
     ignore: parseIgnore(body.ignore),
   };
 }

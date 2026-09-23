@@ -1,7 +1,14 @@
 import { GateError } from "./errors.js";
 import type { CliArgs, Command, Format } from "./types.js";
 
-const COMMANDS: readonly Command[] = ["complexity", "cognitive", "arch", "mutation", "all"];
+const COMMANDS: readonly Command[] = [
+  "complexity",
+  "cognitive",
+  "arch",
+  "mutation",
+  "perf",
+  "all",
+];
 
 function asCommand(value: string): Command | undefined {
   if (value === "mutate") {

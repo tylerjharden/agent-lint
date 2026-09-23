@@ -1,9 +1,9 @@
 import type { ExitCode } from "./exit.js";
 
-export type Command = "complexity" | "cognitive" | "arch" | "mutation" | "all";
+export type Command = "complexity" | "cognitive" | "arch" | "mutation" | "perf" | "all";
 export type Format = "human" | "json" | "sarif";
-export type Lane = "complexity" | "cognitive" | "architecture" | "mutation";
-export type ToolName = "lizard" | "eslint" | "sonarjs" | "dependency-cruiser" | "stryker";
+export type Lane = "complexity" | "cognitive" | "architecture" | "mutation" | "perf";
+export type ToolName = "lizard" | "eslint" | "sonarjs" | "dependency-cruiser" | "stryker" | "vitest";
 export type Metric = "cyclomatic" | "cognitive";
 export type CyclomaticTool = "lizard" | "eslint";
 
@@ -48,12 +48,28 @@ export interface ScoreFinding {
   message: string;
 }
 
-export type Finding = MetricFinding | RuleFinding | ScoreFinding;
+export interface TimingFinding {
+  kind: "timing";
+  lane: "perf";
+  tool: "vitest";
+  rule: "perf-regression";
+  file: string;
+  line: number;
+  bench: string;
+  value: number;
+  baseline: number;
+  threshold: number;
+  hz?: number;
+  message: string;
+}
+
+export type Finding = MetricFinding | RuleFinding | ScoreFinding | TimingFinding;
 
 export interface Thresholds {
   cyclomatic: number;
   cognitive: number;
   mutation?: number;
+  perf?: number;
 }
 
 export interface LintReport {
@@ -77,6 +93,9 @@ export interface AgentLintConfig {
     config: string;
   };
   mutation?: {
+    config: string;
+  };
+  perf?: {
     config: string;
   };
   ignore: string[];

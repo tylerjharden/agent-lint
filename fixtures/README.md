@@ -1,6 +1,6 @@
 # Golden fixtures
 
-Shared pass set covers **complexity and cognitive**. Architecture fixtures are small module graphs under `arch/`. Mutation fixtures are one-function packages under `mutation/`. Fail fixtures are labeled by lane in the filename or directory name.
+Shared pass set covers **complexity and cognitive**. Architecture fixtures are small module graphs under `arch/`. Mutation fixtures are one-function packages under `mutation/`. Perf fixtures are one-function Vitest benches under `perf/`. Fail fixtures are labeled by lane in the filename or directory name.
 
 | Path | Lane | Expected CLI |
 |------|------|----------------|
@@ -24,7 +24,12 @@ Shared pass set covers **complexity and cognitive**. Architecture fixtures are s
 | `mutation/pass-01-add` | mutation (score ≥ break 80) | exit 0 |
 | `mutation/fail-01-survived` | mutation (score < break 80) | exit 1 |
 | `mutation/empty-01-no-mutants` | mutation (0 valid mutants) | exit 2 |
+| `perf/pass-01-add` | perf (mean under ceiling 1) | exit 0 |
+| `perf/fail-01-regression` | perf (mean over tight 1e-12) | exit 1 |
+| `perf/empty-01-no-benches` | perf (0 benches) | exit 2 |
 
-Thresholds: `fixtures/agent-lint.config.json` (cyclomatic max 10, cognitive max 15). Architecture rules: `fixtures/arch/.dependency-cruiser.cjs`. Mutation uses the native `stryker.config.json` in each mutation fixture. `all` does not start Stryker unless `mutation.config` is set.
+Thresholds: `fixtures/agent-lint.config.json` (cyclomatic max 10, cognitive max 15). Architecture rules: `fixtures/arch/.dependency-cruiser.cjs`. Mutation uses the native `stryker.config.json` in each mutation fixture. Perf uses the `perf.config.json` in each perf fixture. `all` does not start Stryker unless `mutation.config` is set. `all` does not start Vitest bench unless `perf.config` is set.
 
 Measured `npx stryker run` cost: pass-01-add 1.1s (score 100), fail-01-survived 1.3s (score 60), empty-01-no-mutants 1.0s (n/a).
+
+Perf fixtures cap Vitest at `time: 50` and 20 iterations. Measured `node dist/cli.js perf` cost: pass-01-add 1.0s (under ceiling), fail-01-regression 1.0s (over tight mean), empty-01-no-benches 0.7s (0 benches). The pass baseline is a human-owned ceiling (`mean: 1`), not a CI-measured floor.

@@ -9,6 +9,7 @@ import type {
   RuleFinding,
   ScoreFinding,
   Thresholds,
+  TimingFinding,
 } from "./types.js";
 import { packageVersion } from "./version.js";
 
@@ -37,6 +38,11 @@ function formatScoreLine(finding: ScoreFinding, cwd: string): string {
   return `${file}:${finding.line}  mutation-score ${finding.value} < ${finding.threshold}  [${finding.tool}]  ${finding.message}`;
 }
 
+function formatTimingLine(finding: TimingFinding, cwd: string): string {
+  const file = displayPath(finding.file, cwd);
+  return `${file}:${finding.line}  ${finding.bench} mean ${finding.value} > ${finding.threshold}  [${finding.tool}]  ${finding.message}`;
+}
+
 function formatFindingLine(finding: Finding, cwd: string): string {
   switch (finding.kind) {
     case "metric":
@@ -45,6 +51,8 @@ function formatFindingLine(finding: Finding, cwd: string): string {
       return formatRuleLine(finding, cwd);
     case "score":
       return formatScoreLine(finding, cwd);
+    case "timing":
+      return formatTimingLine(finding, cwd);
     default: {
       const exhaustive: never = finding;
       throw new Error(`Unknown finding: ${String(exhaustive)}`);
@@ -65,6 +73,14 @@ function humanHeader(report: LintReport): string[] {
     const breakAt = report.thresholds.mutation;
     lines.push(
       breakAt === undefined ? "mutation: stryker" : `mutation break: ${breakAt}`,
+    );
+  }
+  if (report.lanes.includes("perf")) {
+    const maxRegression = report.thresholds.perf;
+    lines.push(
+      maxRegression === undefined
+        ? "perf: vitest bench"
+        : `perf maxRegression: ${maxRegression}`,
     );
   }
   lines.push("");
@@ -121,6 +137,8 @@ function findingForJson(finding: Finding, cwd: string): Finding {
       };
     case "score":
       return { ...finding, file: displayPath(finding.file, cwd) };
+    case "timing":
+      return { ...finding, file: displayPath(finding.file, cwd) };
     default: {
       const exhaustive: never = finding;
       throw new Error(`Unknown finding: ${String(exhaustive)}`);
@@ -153,7 +171,7 @@ interface SarifResult {
   properties: {
     lane: Lane;
     tool: string;
-    kind: "metric" | "rule" | "score";
+    kind: "metric" | "rule" | "score" | "timing";
     metric?: string;
     value?: number;
     threshold?: number;
@@ -164,6 +182,9 @@ interface SarifResult {
     survived?: number;
     noCoverage?: number;
     timeout?: number;
+    bench?: string;
+    baseline?: number;
+    hz?: number;
   };
 }
 
@@ -175,6 +196,8 @@ function sarifRuleId(finding: Finding): string {
       return "dependency-cruiser";
     case "score":
       return "mutation-score";
+    case "timing":
+      return "perf-regression";
     default: {
       const exhaustive: never = finding;
       throw new Error(`Unknown finding: ${String(exhaustive)}`);
@@ -214,6 +237,18 @@ function sarifProperties(finding: Finding, cwd: string): SarifResult["properties
         survived: finding.survived,
         noCoverage: finding.noCoverage,
         timeout: finding.timeout,
+      };
+    case "timing":
+      return {
+        lane: finding.lane,
+        tool: finding.tool,
+        kind: "timing",
+        rule: finding.rule,
+        value: finding.value,
+        threshold: finding.threshold,
+        bench: finding.bench,
+        baseline: finding.baseline,
+        hz: finding.hz,
       };
     default: {
       const exhaustive: never = finding;
@@ -270,6 +305,10 @@ export function formatSarif(report: LintReport, cwd = process.cwd()): string {
               {
                 id: "mutation-score",
                 shortDescription: { text: "Mutation score (StrykerJS)" },
+              },
+              {
+                id: "perf-regression",
+                shortDescription: { text: "Perf regression vs baseline (Vitest bench)" },
               },
             ],
           },

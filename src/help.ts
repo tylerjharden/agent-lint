@@ -1,8 +1,8 @@
 export function helpText(): string {
-  return `agent-lint — cyclomatic + cognitive + architecture + mutation gates
+  return `agent-lint — cyclomatic + cognitive + architecture + mutation + perf gates
 
 Usage:
-  agent-lint [complexity|cognitive|arch|mutation|all] [paths...] [options]
+  agent-lint [complexity|cognitive|arch|mutation|perf|all] [paths...] [options]
   agent-lint [paths...]                  # same as "all"
   echo path.ts | agent-lint --stdin      # extra paths from stdin
   cat snippet.ts | agent-lint --stdin-code --stdin-file-path snippet.ts
@@ -12,6 +12,7 @@ Commands:
   cognitive    Cognitive only (eslint-plugin-sonarjs)
   arch         Architecture only (dependency-cruiser)
   mutation     Mutation score only (StrykerJS). Alias: mutate
+  perf         Perf vs baseline only (Vitest bench)
   all          Configured applicable lanes (default)
 
 Options:
@@ -29,13 +30,14 @@ Options:
 
 Exit codes:
   0  pass
-  1  fail (threshold, architecture rule, or mutation-score breach)
+  1  fail (threshold, architecture rule, mutation-score, or perf-regression)
   2  error (tool or config broken — never a soft pass)
 
 Examples:
   npx agent-lint all src
   node bin/agent-lint.js arch src --json
   node dist/cli.js mutation fixtures/mutation/pass-01-add
+  node dist/cli.js perf fixtures/perf/pass-01-add --config test/perf-enabled.json
   node dist/cli.js cognitive src --format sarif
 `;
 }

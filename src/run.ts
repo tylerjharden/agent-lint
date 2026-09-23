@@ -3,13 +3,14 @@ import { collectFromPaths, parsePathList } from "./collect-paths.js";
 import type { AgentLintConfig, CliArgs, Finding, Lane, LintReport, Thresholds } from "./types.js";
 import { GateError } from "./errors.js";
 import { isJsTsFile, isLizardFile } from "./extensions.js";
-import { lanesFor, mutationConfigured } from "./lanes.js";
+import { lanesFor, mutationConfigured, perfConfigured } from "./lanes.js";
 import { reportFromFindings } from "./report.js";
 import { runDepcruise } from "./runners/depcruise.js";
 import { runEslintCognitive, runEslintCognitiveText } from "./runners/eslint-cognitive.js";
 import { runEslintComplexity, runEslintComplexityText } from "./runners/eslint-complexity.js";
 import { runLizard } from "./runners/lizard.js";
 import { runStryker } from "./runners/stryker.js";
+import { runVitestBench } from "./runners/vitest-bench.js";
 import { writeTempSource } from "./temp-source.js";
 
 function usesLizard(config: AgentLintConfig, lanes: Lane[]): boolean {
@@ -32,31 +33,64 @@ function usesMutation(lanes: Lane[]): boolean {
   return lanes.includes("mutation");
 }
 
+function usesPerf(lanes: Lane[]): boolean {
+  return lanes.includes("perf");
+}
+
+const STDIN_CODE_BLOCKED: Partial<Record<CliArgs["command"], string>> = {
+  arch: "arch does not accept --stdin-code. Architecture runs on files on disk.",
+  mutation: "mutation does not accept --stdin-code. Mutation runs on files on disk.",
+  perf: "perf does not accept --stdin-code. Perf benches run on files on disk.",
+};
+
+function rejectStdinCodeCommand(args: CliArgs): void {
+  if (!args.stdinCode) {
+    return;
+  }
+  const message = STDIN_CODE_BLOCKED[args.command];
+  if (message !== undefined) {
+    throw new GateError(message);
+  }
+}
+
+function skipOnStdinCode(lane: Lane): boolean {
+  return lane === "architecture" || lane === "mutation" || lane === "perf";
+}
+
 function lanesForThisRun(args: CliArgs, config: AgentLintConfig): Lane[] {
-  if (args.stdinCode && args.command === "arch") {
-    throw new GateError(
-      "arch does not accept --stdin-code. Architecture runs on files on disk.",
-    );
-  }
-  if (args.stdinCode && args.command === "mutation") {
-    throw new GateError(
-      "mutation does not accept --stdin-code. Mutation runs on files on disk.",
-    );
-  }
-  const lanes = lanesFor(args.command, mutationConfigured(config));
+  rejectStdinCodeCommand(args);
+  const lanes = lanesFor(args.command, {
+    mutation: mutationConfigured(config),
+    perf: perfConfigured(config),
+  });
   if (!args.stdinCode) {
     return lanes;
   }
-  return lanes.filter((lane) => lane !== "architecture" && lane !== "mutation");
+  return lanes.filter((lane) => !skipOnStdinCode(lane));
+}
+
+function requireOptionalLaneConfig(
+  value: { config: string } | undefined,
+  missing: string,
+): string {
+  if (value === undefined) {
+    throw new GateError(missing);
+  }
+  return value.config;
 }
 
 function requireMutationConfig(config: AgentLintConfig): string {
-  if (config.mutation === undefined) {
-    throw new GateError(
-      "Mutation config is not set. Set mutation.config to a native Stryker file. Copy templates/mutation/stryker.config.json and point mutation.config at the copy.",
-    );
-  }
-  return config.mutation.config;
+  return requireOptionalLaneConfig(
+    config.mutation,
+    "Mutation config is not set. Set mutation.config to a native Stryker file. Copy templates/mutation/stryker.config.json and point mutation.config at the copy.",
+  );
+}
+
+function requirePerfConfig(config: AgentLintConfig): string {
+  return requireOptionalLaneConfig(
+    config.perf,
+    "Perf config is not set. Set perf.config to a perf config file. Copy templates/perf/perf.config.json and point perf.config at the copy.",
+  );
 }
 
 function requireJsTs(filePath: string, abs: string, lane: string): void {
@@ -97,7 +131,8 @@ function assertToolsEnabled(files: string[], config: AgentLintConfig, lanes: Lan
     usesEslintCyclo(config, lanes) ||
     usesCognitive(lanes) ||
     usesArchitecture(lanes) ||
-    usesMutation(lanes);
+    usesMutation(lanes) ||
+    usesPerf(lanes);
   if (!anyTool) {
     throw new GateError("No lanes/tools enabled for this run.");
   }
@@ -108,11 +143,12 @@ async function runOnFiles(
   config: AgentLintConfig,
   lanes: Lane[],
   cwd: string,
-): Promise<{ findings: Finding[]; mutationBreak?: number }> {
+): Promise<{ findings: Finding[]; mutationBreak?: number; perfRegression?: number }> {
   assertLaneFiles(files, config, lanes);
   assertToolsEnabled(files, config, lanes);
   const findings: Finding[] = [];
   let mutationBreak: number | undefined;
+  let perfRegression: number | undefined;
   if (usesLizard(config, lanes)) {
     findings.push(...runLizard(files, config.cyclomatic.max));
   }
@@ -132,7 +168,12 @@ async function runOnFiles(
       mutationBreak = mutation.breakThreshold;
     }
   }
-  return { findings, mutationBreak };
+  if (usesPerf(lanes)) {
+    const perf = await runVitestBench(requirePerfConfig(config), cwd);
+    findings.push(...perf.findings);
+    perfRegression = perf.maxRegression;
+  }
+  return { findings, mutationBreak, perfRegression };
 }
 
 async function runEslintOnText(
@@ -187,14 +228,17 @@ function resolvePathArgs(args: CliArgs, stdinText: string | undefined): string[]
 
 function thresholdsFrom(
   config: AgentLintConfig,
-  mutationBreak: number | undefined,
+  extras: { mutationBreak?: number; perfRegression?: number },
 ): Thresholds {
   const thresholds: Thresholds = {
     cyclomatic: config.cyclomatic.max,
     cognitive: config.cognitive.max,
   };
-  if (mutationBreak !== undefined) {
-    thresholds.mutation = mutationBreak;
+  if (extras.mutationBreak !== undefined) {
+    thresholds.mutation = extras.mutationBreak;
+  }
+  if (extras.perfRegression !== undefined) {
+    thresholds.perf = extras.perfRegression;
   }
   return thresholds;
 }
@@ -212,7 +256,7 @@ export async function runLint(
       throw new GateError("--stdin-code was set but stdin was empty");
     }
     const findings = await runOnStdinCode(stdinText, args.stdinFilePath, config, lanes);
-    return reportFromFindings(findings, lanes, thresholdsFrom(config, undefined));
+    return reportFromFindings(findings, lanes, thresholdsFrom(config, {}));
   }
 
   const files = collectFromPaths(resolvePathArgs(args, stdinText), cwd, config.ignore);
@@ -221,5 +265,12 @@ export async function runLint(
   }
 
   const result = await runOnFiles(files, config, lanes, cwd);
-  return reportFromFindings(result.findings, lanes, thresholdsFrom(config, result.mutationBreak));
+  return reportFromFindings(
+    result.findings,
+    lanes,
+    thresholdsFrom(config, {
+      mutationBreak: result.mutationBreak,
+      perfRegression: result.perfRegression,
+    }),
+  );
 }

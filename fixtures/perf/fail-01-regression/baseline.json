@@ -1,0 +1,5 @@
+{
+  "benches": [
+    { "name": "add", "mean": 1e-12 }
+  ]
+}

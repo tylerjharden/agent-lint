@@ -1,0 +1,5 @@
+{
+  "cyclomatic": { "max": 10, "tools": ["eslint"] },
+  "cognitive": { "max": 15 },
+  "perf": { "config": "" }
+}

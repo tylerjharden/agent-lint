@@ -2,9 +2,9 @@
 
 Thin Node/TypeScript CLI that **wraps** existing analyzers and normalizes their output into one fail-closed gate.
 
-This is **not** a mega-linter and **not** a wisdom substitute. It reports cyclomatic complexity, cognitive complexity, architecture rule breaches, and mutation-score misses, then exits.
+This is **not** a mega-linter and **not** a wisdom substitute. It reports cyclomatic complexity, cognitive complexity, architecture rule breaches, mutation-score misses, and perf regressions versus a human baseline, then exits.
 
-Spike #3 adds mutation (StrykerJS). Perf and BC stay out of scope.
+Spike #4 adds perf (Vitest bench). BC stays out of scope.
 
 ## Repo
 
@@ -22,8 +22,9 @@ Spike #3 adds mutation (StrykerJS). Perf and BC stay out of scope.
 | Cognitive | [`eslint-plugin-sonarjs`](https://www.npmjs.com/package/eslint-plugin-sonarjs) `cognitive-complexity` (LGPL-3.0) |
 | Architecture | [dependency-cruiser](https://github.com/sverweij/dependency-cruiser) (MIT) |
 | Mutation | [StrykerJS](https://stryker-mutator.io/) `@stryker-mutator/core` (Apache-2.0) |
+| Perf | [Vitest](https://vitest.dev/) `vitest bench` (MIT) |
 
-It does **not** invent CCN, cognitive scores, a module graph, or mutants. If lizard, ESLint/sonarjs, dependency-cruiser, or Stryker cannot run, the process exits **2** (never a soft pass).
+It does **not** invent CCN, cognitive scores, a module graph, mutants, or timings. If lizard, ESLint/sonarjs, dependency-cruiser, Stryker, or Vitest cannot run, the process exits **2** (never a soft pass).
 
 Lizard parsers can still “soft-fail” on broken syntax (that is lizard’s behavior). We surface a tool crash as exit 2; we do not re-parse the file ourselves.
 
@@ -36,9 +37,10 @@ Lizard parsers can still “soft-fail” on broken syntax (that is lizard’s be
 | sonarjs `cognitive-complexity` | Human / JSON / SARIF normalize |
 | dependency-cruiser `cruise()` + native rule files | `arch` command and Finding normalize |
 | StrykerJS `runMutationTest()` + native Stryker files | `mutation` command and score Finding |
+| Vitest `bench` + `--outputJson` | `perf` command, baseline compare, timing Finding |
 | | Optional future diff-scope hook (`src/scope.ts`) |
 
-We do **not** build parsers, a graph engine, a mutation engine, or another Sonar.
+We do **not** build parsers, a graph engine, a mutation engine, a benchmark engine, or another Sonar.
 
 ## Install
 
@@ -59,18 +61,21 @@ npm run build
 
 `@stryker-mutator/core` is an **npm dependency** (Apache-2.0). A missing install fails the mutation lane closed (exit 2). Test-runner plugins stay in the project that owns the Stryker file.
 
+`vitest` is an **npm dependency** (MIT). A missing install fails the perf lane closed (exit 2). Bench files stay in the project that owns the perf config.
+
 ## How to run
 
 After `npm run build`:
 
 ```bash
-# default command is "all" (complexity + cognitive + architecture; mutation only if configured)
+# default command is "all" (complexity + cognitive + architecture; mutation and perf only if configured)
 node bin/agent-lint.js all src
 node dist/cli.js complexity fixtures/pass
 npx agent-lint cognitive src --json
 node bin/agent-lint.js arch src
 node dist/cli.js mutation fixtures/mutation/pass-01-add --config test/mutation-enabled.json
 node dist/cli.js mutate fixtures/mutation/pass-01-add --config test/mutation-enabled.json
+node dist/cli.js perf fixtures/perf/pass-01-add --config test/perf-enabled.json
 
 # paths and/or stdin
 echo fixtures/pass/pass-01-add.ts | node bin/agent-lint.js --stdin
@@ -82,7 +87,7 @@ node bin/agent-lint.js all src --json
 node bin/agent-lint.js all src --sarif
 ```
 
-`--stdin-code` runs cyclomatic and cognitive only. It skips architecture and mutation because a snippet has no module graph and no test run. `arch --stdin-code` and `mutation --stdin-code` exit **2**.
+`--stdin-code` runs cyclomatic and cognitive only. It skips architecture, mutation, and perf because a snippet has no module graph, no test run, and no bench file. `arch --stdin-code`, `mutation --stdin-code`, and `perf --stdin-code` exit **2**.
 
 CI-ready invocations (same binary):
 
@@ -92,6 +97,7 @@ node bin/agent-lint.js all src --format sarif
 node dist/cli.js all src
 node dist/cli.js arch src --format json
 node dist/cli.js mutation src --format json
+node dist/cli.js perf src --format json
 ```
 
 ### Commands
@@ -102,17 +108,18 @@ node dist/cli.js mutation src --format json
 | `cognitive` | sonarjs `cognitive-complexity` |
 | `arch` | dependency-cruiser |
 | `mutation` (`mutate`) | StrykerJS |
+| `perf` | Vitest bench vs baseline |
 | `all` (default) | configured applicable lanes |
 
-`all` includes mutation only when `mutation.config` is set.
+`all` includes mutation only when `mutation.config` is set. `all` includes perf only when `perf.config` is set.
 
 ### Exit codes
 
 | Code | Meaning |
 |------|---------|
-| **0** | Pass — no function over threshold, no architecture `error`, and mutation score ≥ `thresholds.break` when mutation ran |
-| **1** | Fail — threshold breach, architecture rule breach, or mutation score below `thresholds.break` |
-| **2** | Error — tool missing, config broken, no applicable files, or unscorable mutation run. **Never** treated as pass |
+| **0** | Pass — no function over threshold, no architecture `error`, mutation score ≥ `thresholds.break` when mutation ran, and no bench over `baseline * (1 + maxRegression)` when perf ran |
+| **1** | Fail — threshold breach, architecture rule breach, mutation score below `thresholds.break`, or perf regression |
+| **2** | Error — tool missing, config broken, no applicable files, unscorable mutation run, or unscorable perf run. **Never** treated as pass |
 
 ## Config
 
@@ -134,9 +141,10 @@ Searched from the working directory, first hit wins:
 | `cognitive.max` | **15** | Same as sonarjs’s usual default. |
 | `architecture.config` | `.dependency-cruiser.cjs` | Native dependency-cruiser file. Missing or unreadable is exit **2**. |
 | `mutation.config` | unset | Native Stryker file. Unset means `all` does not start Stryker. Missing or unreadable when the mutation lane runs is exit **2**. |
+| `perf.config` | unset | Perf glue file (Vitest config path, baseline, `maxRegression`). Unset means `all` does not start Vitest bench. Missing or unreadable when the perf lane runs is exit **2**. |
 | `ignore` | `node_modules/**`, `dist/**`, `coverage/**`, `.git/**` | Prefix globs. |
 
-CLI overrides: `--max-cyclomatic <n>` and `--max-cognitive <n>`. There is no `--max-mutation`. Humans set `thresholds.break` in the Stryker file.
+CLI overrides: `--max-cyclomatic <n>` and `--max-cognitive <n>`. There is no `--max-mutation` or `--max-perf`. Humans set `thresholds.break` in the Stryker file and `maxRegression` in the perf file.
 
 Example `agent-lint.config.json`:
 
@@ -146,6 +154,7 @@ Example `agent-lint.config.json`:
   "cognitive": { "max": 15 },
   "architecture": { "config": ".dependency-cruiser.cjs" },
   "mutation": { "config": "stryker.config.json" },
+  "perf": { "config": "perf.config.json" },
   "ignore": ["node_modules/**", "dist/**", "fixtures/**"]
 }
 ```
@@ -184,6 +193,37 @@ Mutation is expensive. Scope `mutate` to the files tests cover. The golden fixtu
 
 `all` does not start Stryker unless `mutation.config` is set. Time a wider glob before putting it on CI.
 
+### Perf config
+
+`perf.config` is a path to a **perf glue file**. That file points at a native Vitest config, a human-owned `baseline.json`, and `maxRegression`. agent-lint does not own a benchmark engine.
+
+The files under `templates/perf/` are **templates**. Copy them, write a cheap `bench/*.bench.js`, record baseline means, and point `perf.config` at the copy. The repo root `agent-lint.config.json` leaves perf unset so `npm run lint:self` does not start Vitest bench.
+
+Honor the glue file:
+
+- `runner` — `vitest` (default). Other runners, including hyperfine, are not this wrap.
+- `config` — native Vitest file. Missing or thrown is exit **2**.
+- `baseline` — JSON `{ "benches": [{ "name", "mean" }] }`. `mean` uses the same unit Vitest writes (`--outputJson`). Missing, empty, or non-positive means are exit **2**.
+- `maxRegression` — finite number ≥ 0. `0.5` allows 50% slower than baseline. Missing or invalid is exit **2**.
+
+Compare is `current.mean > baseline.mean * (1 + maxRegression)`:
+
+- under the allowed mean — exit **0**
+- over the allowed mean — exit **1** (`kind: "timing"`)
+- missing config, thrown runner, 0 benches, or name mismatch with the baseline — exit **2**
+
+CLI paths do not become bench includes. Vitest reads `benchmark.include` from its own file.
+
+Perf fixtures stay cheap (`time: 50`, few iterations). Measured on this machine with `node dist/cli.js perf`:
+
+| Fixture | Result | Elapsed |
+|---------|--------|---------|
+| `fixtures/perf/pass-01-add` | under ceiling mean `1` | 1.0s |
+| `fixtures/perf/fail-01-regression` | over tight mean `1e-12` | 1.0s |
+| `fixtures/perf/empty-01-no-benches` | 0 benches | 0.7s |
+
+`all` does not start Vitest bench unless `perf.config` is set. Do not put a wide bench glob on CI without timing it.
+
 ## Fixtures
 
 `npm test` (alias: `npm run fixtures`) builds the CLI and asserts golden exit codes.
@@ -198,7 +238,10 @@ Mutation is expensive. Scope `mutate` to the files tests cover. The golden fixtu
 | `fixtures/mutation/pass-01-add` | 1 function + tests | `mutation` → exit 0 |
 | `fixtures/mutation/fail-01-survived` | 1 function, surviving mutants | `mutation` → exit 1 |
 | `fixtures/mutation/empty-01-no-mutants` | no valid mutants | `mutation` → exit 2 |
-| `test/broken/*` | invalid JSON / max / tools / missing arch or mutation config | exit 2 |
+| `fixtures/perf/pass-01-add` | 1 function + cheap bench | `perf` → exit 0 |
+| `fixtures/perf/fail-01-regression` | same bench, tight baseline | `perf` → exit 1 |
+| `fixtures/perf/empty-01-no-benches` | no `bench()` calls | `perf` → exit 2 |
+| `test/broken/*` | invalid JSON / max / tools / missing arch, mutation, or perf config | exit 2 |
 
 Labels live in the filenames and directory names. See `fixtures/README.md`.
 
@@ -209,6 +252,7 @@ Labels live in the filenames and directory names. See `fixtures/README.md`.
 - **ESLint** and `@typescript-eslint/parser`: MIT
 - **dependency-cruiser**: MIT
 - **@stryker-mutator/core**: Apache-2.0
+- **vitest**: MIT
 - **eslint-plugin-sonarjs**: **LGPL-3.0-only**
 
 LGPL rules for this repo:
@@ -219,21 +263,25 @@ LGPL rules for this repo:
 
 `@stryker-mutator/core` is a regular dependency and is also loaded with a dynamic import (`src/runners/load-stryker.ts`). Do not bundle it.
 
-If you redistribute a compiled binary of this CLI, keep sonarjs and Stryker as separate installable modules.
+`vitest` is a regular dependency. The wrap resolves the CLI (`vitest/vitest.mjs`) and spawns `vitest bench`. Do not bundle it.
+
+If you redistribute a compiled binary of this CLI, keep sonarjs, Stryker, and Vitest as separate installable modules.
 
 ## What this is not
 
-- Not perf benches or BC detection.
-- Not k6. Not a training reward signal.
-- Not a claim that low complexity, a green architecture lane, or a high mutation score equals good design.
-- Not a substitute for a human ADR on layering or for a human-owned Stryker file.
+- Not a custom benchmark engine. Not Bencher. Not k6 or Artillery.
+- Not hyperfine (fine later for CLI binaries; this wrap is Vitest bench).
+- Not BC detection.
+- Not a training reward signal.
+- Not a claim that low complexity, a green architecture lane, a high mutation score, or a stable bench equals good design.
+- Not a substitute for a human ADR on layering, a human-owned Stryker file, or a human-owned baseline.
 
 ## Layout
 
 ```
 src/            orchestrator (args, config, runners, report)
 bin/            node bin/agent-lint.js
-templates/      human-owned architecture and mutation starters
+templates/      human-owned architecture, mutation, and perf starters
 fixtures/       golden pass/fail samples
 test/           node:test exit-code assertions
 ```

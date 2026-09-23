@@ -1,0 +1,6 @@
+{
+  "runner": "vitest",
+  "config": "throws-vitest.config.js",
+  "baseline": "throws-baseline.json",
+  "maxRegression": 0.5
+}

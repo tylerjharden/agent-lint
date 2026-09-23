@@ -6,4 +6,5 @@ uploads/
 coverage/
 reports/
 .stryker-tmp/
+.vitest/
 .eslintcache
