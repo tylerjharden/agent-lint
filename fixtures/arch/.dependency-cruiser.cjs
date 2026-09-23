@@ -1,9 +1,3 @@
-/**
- * Golden-fixture rule pack. Path prefixes match fixtures/arch graphs
- * with ui, app, and domain folders.
- * Isolated Spike #1 files under fixtures/pass have none of those folders, so
- * `all fixtures/pass` still exits 0.
- */
 module.exports = {
   forbidden: [
     {
