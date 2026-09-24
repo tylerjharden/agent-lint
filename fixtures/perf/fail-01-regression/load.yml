@@ -1,0 +1,12 @@
+config:
+  target: "http://127.0.0.1:18766"
+  phases:
+    - duration: 1
+      arrivalRate: 1
+  http:
+    timeout: 3
+scenarios:
+  - name: ping
+    flow:
+      - get:
+          url: "/"

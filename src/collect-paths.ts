@@ -12,6 +12,7 @@ const SKIP_DIR_NAMES = new Set([
   "coverage",
   "reports",
   ".stryker-tmp",
+  ".vitest",
 ]);
 
 function toPosix(rel: string): string {

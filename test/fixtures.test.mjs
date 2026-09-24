@@ -53,6 +53,11 @@ test("help exits 0", () => {
   assert.equal(result.status, 0);
   assert.match(result.stdout, /agent-lint/);
   assert.match(result.stdout, /mutation/);
+  assert.match(result.stdout, /perf/);
+  assert.match(result.stdout, /Artillery/);
+  assert.match(result.stdout, /--micro/);
+  assert.match(result.stdout, /--load/);
+  assert.match(result.stdout, /Vitest/);
 });
 
 test("node bin/agent-lint.js --version exits 0", () => {
@@ -470,4 +475,324 @@ test("invalid Stryker JSON → 2", () => {
     "fixtures/mutation/pass-01-add",
   ]);
   assert.equal(result.status, 2, result.stderr + result.stdout);
+});
+
+function runPerf(args, options = {}) {
+  return spawnSync(process.execPath, [cli, ...args], {
+    cwd: root,
+    encoding: "utf8",
+    ...options,
+  });
+}
+
+test("perf without flags on load-only config runs load/soak → 0", () => {
+  const result = runPerf([
+    "--config",
+    "test/perf-enabled.json",
+    "perf",
+    "fixtures/perf/pass-01-http",
+    "--json",
+  ]);
+  assert.equal(result.status, 0, result.stderr + result.stdout);
+  const body = JSON.parse(result.stdout);
+  assert.equal(body.thresholds.load, 1);
+  assert.equal(body.thresholds.micro, undefined);
+});
+
+test("perf on a healthy Artillery fixture → 0", () => {
+  const result = runPerf([
+    "--config",
+    "test/perf-enabled.json",
+    "perf",
+    "--load",
+    "fixtures/perf/pass-01-http",
+    "--json",
+  ]);
+  assert.equal(result.status, 0, result.stderr + result.stdout);
+  const body = JSON.parse(result.stdout);
+  assert.equal(body.ok, true);
+  assert.equal(body.findings.length, 0);
+  assert.ok(body.lanes.includes("perf"));
+  assert.equal(body.thresholds.load, 1);
+});
+
+test("perf p95 over baseline → 1", () => {
+  const result = runPerf([
+    "--config",
+    "test/perf-fail.json",
+    "perf",
+    "--load",
+    "fixtures/perf/fail-01-regression",
+    "--json",
+  ]);
+  assert.equal(result.status, 1, result.stderr + result.stdout);
+  const body = JSON.parse(result.stdout);
+  assert.ok(body.findings.length >= 1);
+  const finding = body.findings[0];
+  assert.equal(finding.kind, "timing");
+  assert.equal(finding.lane, "perf");
+  assert.equal(finding.tool, "artillery");
+  assert.equal(finding.rule, "load-regression");
+  assert.equal(finding.gate, "load");
+  assert.equal(finding.metric, "p95");
+  assert.equal(finding.baseline, 0.001);
+  assert.ok(finding.value > finding.threshold);
+});
+
+test("perf fail human line uses p95 and artillery", () => {
+  const result = runPerf([
+    "--config",
+    "test/perf-fail.json",
+    "perf",
+    "--load",
+    "fixtures/perf/fail-01-regression",
+  ]);
+  assert.equal(result.status, 1, result.stderr + result.stdout);
+  assert.match(result.stdout, /p95 .+ > .+ \[artillery\]/);
+});
+
+test("zero HTTP responses → 2", () => {
+  const result = runPerf([
+    "--config",
+    "test/perf-empty.json",
+    "perf",
+    "--load",
+    "fixtures/perf/empty-01-no-requests",
+  ]);
+  assert.equal(result.status, 2, result.stderr + result.stdout);
+  assert.match(`${result.stderr}${result.stdout}`, /unscorable|0 HTTP responses|Artillery/i);
+});
+
+test("all without perf.micro or perf.load does not start Perf", () => {
+  const result = run(["all", "fixtures/pass", "--json"]);
+  assert.equal(result.status, 0, result.stderr + result.stdout);
+  const body = JSON.parse(result.stdout);
+  assert.deepEqual(body.lanes, ["complexity", "cognitive", "architecture"]);
+});
+
+test("all with perf.load includes load/soak → 0", () => {
+  const result = runPerf([
+    "--config",
+    "test/perf-enabled.json",
+    "all",
+    "fixtures/pass",
+    "--json",
+  ]);
+  assert.equal(result.status, 0, result.stderr + result.stdout);
+  const body = JSON.parse(result.stdout);
+  assert.deepEqual(body.lanes, ["complexity", "cognitive", "architecture", "perf"]);
+  assert.equal(body.findings.length, 0);
+});
+
+test("all --stdin-code skips perf even when configured", () => {
+  const result = runPerf(
+    [
+      "--config",
+      "test/perf-enabled.json",
+      "all",
+      "--stdin-code",
+      "--stdin-file-path",
+      "snippet.ts",
+      "--json",
+    ],
+    { input: "export function add(a: number, b: number) { return a + b; }\n" },
+  );
+  assert.equal(result.status, 0, result.stderr + result.stdout);
+  const body = JSON.parse(result.stdout);
+  assert.deepEqual(body.lanes, ["complexity", "cognitive"]);
+});
+
+test("perf --stdin-code → 2", () => {
+  const result = runPerf(
+    [
+      "--config",
+      "test/perf-enabled.json",
+      "perf",
+      "--stdin-code",
+      "--stdin-file-path",
+      "snippet.ts",
+    ],
+    { input: "export function add(a: number, b: number) { return a + b; }\n" },
+  );
+  assert.equal(result.status, 2, result.stderr + result.stdout);
+});
+
+test("missing perf config file → 2", () => {
+  const result = runPerf([
+    "--config",
+    "test/broken/missing-perf.json",
+    "perf",
+    "fixtures/perf/pass-01-http",
+  ]);
+  assert.equal(result.status, 2, result.stderr + result.stdout);
+});
+
+test("perf.micro and perf.load unset on explicit perf → 2", () => {
+  const result = runPerf([
+    "--config",
+    "test/broken/no-perf-key.json",
+    "perf",
+    "fixtures/perf/pass-01-http",
+  ]);
+  assert.equal(result.status, 2, result.stderr + result.stdout);
+});
+
+test("empty perf.config → 2", () => {
+  const result = runPerf([
+    "--config",
+    "test/broken/empty-perf-config.json",
+    "perf",
+    "fixtures/perf/pass-01-http",
+  ]);
+  assert.equal(result.status, 2, result.stderr + result.stdout);
+});
+
+test("broken Artillery script → 2", () => {
+  const result = runPerf([
+    "--config",
+    "test/broken/throws-perf.json",
+    "perf",
+    "fixtures/perf/pass-01-http",
+  ]);
+  assert.equal(result.status, 2, result.stderr + result.stdout);
+});
+
+test("invalid perf JSON → 2", () => {
+  const result = runPerf([
+    "--config",
+    "test/broken/not-json-perf.json",
+    "perf",
+    "fixtures/perf/pass-01-http",
+  ]);
+  assert.equal(result.status, 2, result.stderr + result.stdout);
+});
+
+test("missing baseline → 2", () => {
+  const result = runPerf([
+    "--config",
+    "test/broken/missing-baseline.json",
+    "perf",
+    "fixtures/perf/pass-01-http",
+  ]);
+  assert.equal(result.status, 2, result.stderr + result.stdout);
+});
+
+test("micro-bench on a healthy fixture → 0", () => {
+  const result = runPerf([
+    "--config",
+    "test/micro-enabled.json",
+    "perf",
+    "--micro",
+    "fixtures/micro/pass-01-add",
+    "--json",
+  ]);
+  assert.equal(result.status, 0, result.stderr + result.stdout);
+  const body = JSON.parse(result.stdout);
+  assert.equal(body.findings.length, 0);
+  assert.equal(body.thresholds.micro, 1);
+  assert.equal(body.thresholds.load, undefined);
+});
+
+test("perf without flags on micro-only config runs micro-bench → 0", () => {
+  const result = runPerf([
+    "--config",
+    "test/micro-enabled.json",
+    "perf",
+    "fixtures/micro/pass-01-add",
+    "--json",
+  ]);
+  assert.equal(result.status, 0, result.stderr + result.stdout);
+  const body = JSON.parse(result.stdout);
+  assert.equal(body.thresholds.micro, 1);
+  assert.equal(body.thresholds.load, undefined);
+});
+
+test("micro-bench regression → 1 with gate micro", () => {
+  const result = runPerf([
+    "--config",
+    "test/micro-fail.json",
+    "perf",
+    "--micro",
+    "fixtures/micro/fail-01-regression",
+    "--json",
+  ]);
+  assert.equal(result.status, 1, result.stderr + result.stdout);
+  const finding = JSON.parse(result.stdout).findings[0];
+  assert.equal(finding.tool, "vitest");
+  assert.equal(finding.rule, "micro-regression");
+  assert.equal(finding.gate, "micro");
+});
+
+test("zero benches → 2", () => {
+  const result = runPerf([
+    "--config",
+    "test/micro-empty.json",
+    "perf",
+    "--micro",
+    "fixtures/micro/empty-01-no-benches",
+  ]);
+  assert.equal(result.status, 2, result.stderr + result.stdout);
+  assert.match(`${result.stderr}${result.stdout}`, /unscorable|0 benches|Vitest/i);
+});
+
+test("all with perf.micro includes micro-bench → 0", () => {
+  const result = runPerf([
+    "--config",
+    "test/micro-enabled.json",
+    "all",
+    "fixtures/pass",
+    "--json",
+  ]);
+  assert.equal(result.status, 0, result.stderr + result.stdout);
+  const body = JSON.parse(result.stdout);
+  assert.deepEqual(body.lanes, ["complexity", "cognitive", "architecture", "perf"]);
+  assert.equal(body.thresholds.micro, 1);
+});
+
+test("--micro with all → 2", () => {
+  const result = runPerf([
+    "--config",
+    "test/micro-enabled.json",
+    "all",
+    "--micro",
+    "fixtures/pass",
+  ]);
+  assert.equal(result.status, 2, result.stderr + result.stdout);
+  assert.match(`${result.stderr}${result.stdout}`, /only valid with the perf command/);
+});
+
+test("--load with all → 2", () => {
+  const result = runPerf([
+    "--config",
+    "test/perf-enabled.json",
+    "all",
+    "--load",
+    "fixtures/pass",
+  ]);
+  assert.equal(result.status, 2, result.stderr + result.stdout);
+  assert.match(`${result.stderr}${result.stdout}`, /only valid with the perf command/);
+});
+
+test("perf --load without perf.load → 2", () => {
+  const result = runPerf([
+    "--config",
+    "test/micro-enabled.json",
+    "perf",
+    "--load",
+    "fixtures/micro/pass-01-add",
+  ]);
+  assert.equal(result.status, 2, result.stderr + result.stdout);
+  assert.match(`${result.stderr}${result.stdout}`, /Load\/soak config is not set|perf\.load/);
+});
+
+test("perf --micro without perf.micro → 2", () => {
+  const result = runPerf([
+    "--config",
+    "test/perf-enabled.json",
+    "perf",
+    "--micro",
+    "fixtures/perf/pass-01-http",
+  ]);
+  assert.equal(result.status, 2, result.stderr + result.stdout);
+  assert.match(`${result.stderr}${result.stdout}`, /Micro-bench config is not set|perf\.micro/);
 });

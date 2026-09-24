@@ -77,7 +77,7 @@ export function findingFromMessage(opts: {
   message: string;
   rule: string;
   lane: "complexity" | "cognitive";
-  tool: Exclude<ToolName, "dependency-cruiser" | "stryker">;
+  tool: Exclude<ToolName, "dependency-cruiser" | "stryker" | "artillery" | "vitest">;
   metric: Metric;
   value: number;
   threshold: number;

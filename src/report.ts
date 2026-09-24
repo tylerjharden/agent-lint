@@ -9,6 +9,7 @@ import type {
   RuleFinding,
   ScoreFinding,
   Thresholds,
+  TimingFinding,
 } from "./types.js";
 import { packageVersion } from "./version.js";
 
@@ -37,6 +38,20 @@ function formatScoreLine(finding: ScoreFinding, cwd: string): string {
   return `${file}:${finding.line}  mutation-score ${finding.value} < ${finding.threshold}  [${finding.tool}]  ${finding.message}`;
 }
 
+function formatTimingLine(finding: TimingFinding, cwd: string): string {
+  const file = displayPath(finding.file, cwd);
+  switch (finding.tool) {
+    case "artillery":
+      return `${file}:${finding.line}  p95 ${finding.value} > ${finding.threshold}  [artillery]  ${finding.message}`;
+    case "vitest":
+      return `${file}:${finding.line}  ${finding.bench ?? "bench"} mean ${finding.value} > ${finding.threshold}  [vitest]  ${finding.message}`;
+    default: {
+      const exhaustive: never = finding.tool;
+      throw new Error(`Unknown timing tool: ${String(exhaustive)}`);
+    }
+  }
+}
+
 function formatFindingLine(finding: Finding, cwd: string): string {
   switch (finding.kind) {
     case "metric":
@@ -45,6 +60,8 @@ function formatFindingLine(finding: Finding, cwd: string): string {
       return formatRuleLine(finding, cwd);
     case "score":
       return formatScoreLine(finding, cwd);
+    case "timing":
+      return formatTimingLine(finding, cwd);
     default: {
       const exhaustive: never = finding;
       throw new Error(`Unknown finding: ${String(exhaustive)}`);
@@ -67,8 +84,25 @@ function humanHeader(report: LintReport): string[] {
       breakAt === undefined ? "mutation: stryker" : `mutation break: ${breakAt}`,
     );
   }
+  if (report.lanes.includes("perf")) {
+    lines.push(perfHeaderLine(report.thresholds));
+  }
   lines.push("");
   return lines;
+}
+
+function perfHeaderLine(thresholds: Thresholds): string {
+  const parts: string[] = [];
+  if (thresholds.micro !== undefined) {
+    parts.push(`micro maxRegression: ${thresholds.micro}`);
+  }
+  if (thresholds.load !== undefined) {
+    parts.push(`load p95 maxRegression: ${thresholds.load}`);
+  }
+  if (parts.length === 0) {
+    return "perf: micro-bench + load/soak";
+  }
+  return `perf ${parts.join("; ")}`;
 }
 
 function appendErrors(lines: string[], errors: string[]): void {
@@ -121,6 +155,8 @@ function findingForJson(finding: Finding, cwd: string): Finding {
       };
     case "score":
       return { ...finding, file: displayPath(finding.file, cwd) };
+    case "timing":
+      return { ...finding, file: displayPath(finding.file, cwd) };
     default: {
       const exhaustive: never = finding;
       throw new Error(`Unknown finding: ${String(exhaustive)}`);
@@ -153,7 +189,7 @@ interface SarifResult {
   properties: {
     lane: Lane;
     tool: string;
-    kind: "metric" | "rule" | "score";
+    kind: "metric" | "rule" | "score" | "timing";
     metric?: string;
     value?: number;
     threshold?: number;
@@ -164,6 +200,10 @@ interface SarifResult {
     survived?: number;
     noCoverage?: number;
     timeout?: number;
+    bench?: string;
+    baseline?: number;
+    hz?: number;
+    gate?: string;
   };
 }
 
@@ -175,6 +215,8 @@ function sarifRuleId(finding: Finding): string {
       return "dependency-cruiser";
     case "score":
       return "mutation-score";
+    case "timing":
+      return finding.rule;
     default: {
       const exhaustive: never = finding;
       throw new Error(`Unknown finding: ${String(exhaustive)}`);
@@ -214,6 +256,20 @@ function sarifProperties(finding: Finding, cwd: string): SarifResult["properties
         survived: finding.survived,
         noCoverage: finding.noCoverage,
         timeout: finding.timeout,
+      };
+    case "timing":
+      return {
+        lane: finding.lane,
+        tool: finding.tool,
+        kind: "timing",
+        rule: finding.rule,
+        value: finding.value,
+        threshold: finding.threshold,
+        metric: finding.metric,
+        bench: finding.bench,
+        baseline: finding.baseline,
+        hz: finding.hz,
+        gate: finding.gate,
       };
     default: {
       const exhaustive: never = finding;
@@ -270,6 +326,18 @@ export function formatSarif(report: LintReport, cwd = process.cwd()): string {
               {
                 id: "mutation-score",
                 shortDescription: { text: "Mutation score (StrykerJS)" },
+              },
+              {
+                id: "load-regression",
+                shortDescription: { text: "Load/soak p95 vs baseline (Artillery)" },
+              },
+              {
+                id: "load-ceiling",
+                shortDescription: { text: "Load/soak p95 vs absolute ceiling (Artillery)" },
+              },
+              {
+                id: "micro-regression",
+                shortDescription: { text: "Micro-bench mean vs baseline (Vitest)" },
               },
             ],
           },

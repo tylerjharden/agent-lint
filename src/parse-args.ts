@@ -1,7 +1,14 @@
 import { GateError } from "./errors.js";
 import type { CliArgs, Command, Format } from "./types.js";
 
-const COMMANDS: readonly Command[] = ["complexity", "cognitive", "arch", "mutation", "all"];
+const COMMANDS: readonly Command[] = [
+  "complexity",
+  "cognitive",
+  "arch",
+  "mutation",
+  "perf",
+  "all",
+];
 
 function asCommand(value: string): Command | undefined {
   if (value === "mutate") {
@@ -73,6 +80,14 @@ const FLAG_HANDLERS: Record<string, FlagFn> = {
   },
   "--stdin-code": (args) => {
     args.stdinCode = true;
+    return 1;
+  },
+  "--micro": (args) => {
+    args.micro = true;
+    return 1;
+  },
+  "--load": (args) => {
+    args.load = true;
     return 1;
   },
   "--format": (args, argv, index) => {
@@ -155,6 +170,8 @@ export function parseArgs(argv: string[]): CliArgs {
     stdin: false,
     stdinCode: false,
     stdinFilePath: "stdin.ts",
+    micro: false,
+    load: false,
     help: false,
     version: false,
   };

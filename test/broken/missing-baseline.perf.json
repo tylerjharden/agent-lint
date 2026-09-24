@@ -1,0 +1,5 @@
+{
+  "script": "throws-load.yml",
+  "baseline": "does-not-exist.baseline.json",
+  "maxRegression": 0.5
+}

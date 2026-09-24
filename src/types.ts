@@ -1,9 +1,17 @@
 import type { ExitCode } from "./exit.js";
 
-export type Command = "complexity" | "cognitive" | "arch" | "mutation" | "all";
+export type Command = "complexity" | "cognitive" | "arch" | "mutation" | "perf" | "all";
 export type Format = "human" | "json" | "sarif";
-export type Lane = "complexity" | "cognitive" | "architecture" | "mutation";
-export type ToolName = "lizard" | "eslint" | "sonarjs" | "dependency-cruiser" | "stryker";
+export type Lane = "complexity" | "cognitive" | "architecture" | "mutation" | "perf";
+export type ToolName =
+  | "lizard"
+  | "eslint"
+  | "sonarjs"
+  | "dependency-cruiser"
+  | "stryker"
+  | "artillery"
+  | "vitest";
+export type PerfGate = "micro" | "load";
 export type Metric = "cyclomatic" | "cognitive";
 export type CyclomaticTool = "lizard" | "eslint";
 
@@ -48,12 +56,31 @@ export interface ScoreFinding {
   message: string;
 }
 
-export type Finding = MetricFinding | RuleFinding | ScoreFinding;
+export interface TimingFinding {
+  kind: "timing";
+  lane: "perf";
+  tool: "artillery" | "vitest";
+  rule: "micro-regression" | "load-regression" | "load-ceiling";
+  gate: PerfGate;
+  file: string;
+  line: number;
+  value: number;
+  baseline: number;
+  threshold: number;
+  metric?: "p95";
+  bench?: string;
+  hz?: number;
+  message: string;
+}
+
+export type Finding = MetricFinding | RuleFinding | ScoreFinding | TimingFinding;
 
 export interface Thresholds {
   cyclomatic: number;
   cognitive: number;
   mutation?: number;
+  load?: number;
+  micro?: number;
 }
 
 export interface LintReport {
@@ -79,6 +106,10 @@ export interface AgentLintConfig {
   mutation?: {
     config: string;
   };
+  perf?: {
+    load?: string;
+    micro?: string;
+  };
   ignore: string[];
 }
 
@@ -92,6 +123,8 @@ export interface CliArgs {
   stdinFilePath: string;
   maxCyclomatic?: number;
   maxCognitive?: number;
+  micro: boolean;
+  load: boolean;
   help: boolean;
   version: boolean;
 }

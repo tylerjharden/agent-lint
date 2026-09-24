@@ -3,13 +3,15 @@ import { collectFromPaths, parsePathList } from "./collect-paths.js";
 import type { AgentLintConfig, CliArgs, Finding, Lane, LintReport, Thresholds } from "./types.js";
 import { GateError } from "./errors.js";
 import { isJsTsFile, isLizardFile } from "./extensions.js";
-import { lanesFor, mutationConfigured } from "./lanes.js";
+import { lanesFor, loadConfigured, microConfigured, mutationConfigured, perfConfigured } from "./lanes.js";
 import { reportFromFindings } from "./report.js";
 import { runDepcruise } from "./runners/depcruise.js";
 import { runEslintCognitive, runEslintCognitiveText } from "./runners/eslint-cognitive.js";
 import { runEslintComplexity, runEslintComplexityText } from "./runners/eslint-complexity.js";
 import { runLizard } from "./runners/lizard.js";
 import { runStryker } from "./runners/stryker.js";
+import { runArtillery } from "./runners/artillery.js";
+import { runVitestBench } from "./runners/vitest-bench.js";
 import { writeTempSource } from "./temp-source.js";
 
 function usesLizard(config: AgentLintConfig, lanes: Lane[]): boolean {
@@ -32,31 +34,98 @@ function usesMutation(lanes: Lane[]): boolean {
   return lanes.includes("mutation");
 }
 
+function usesPerf(lanes: Lane[]): boolean {
+  return lanes.includes("perf");
+}
+
+const STDIN_CODE_BLOCKED: Partial<Record<CliArgs["command"], string>> = {
+  arch: "arch does not accept --stdin-code. Architecture runs on files on disk.",
+  mutation: "mutation does not accept --stdin-code. Mutation runs on files on disk.",
+  perf: "perf does not accept --stdin-code. Micro-bench and load/soak run on files on disk.",
+};
+
+function rejectStdinCodeCommand(args: CliArgs): void {
+  if (!args.stdinCode) {
+    return;
+  }
+  const message = STDIN_CODE_BLOCKED[args.command];
+  if (message !== undefined) {
+    throw new GateError(message);
+  }
+}
+
+function skipOnStdinCode(lane: Lane): boolean {
+  return lane === "architecture" || lane === "mutation" || lane === "perf";
+}
+
 function lanesForThisRun(args: CliArgs, config: AgentLintConfig): Lane[] {
-  if (args.stdinCode && args.command === "arch") {
-    throw new GateError(
-      "arch does not accept --stdin-code. Architecture runs on files on disk.",
-    );
-  }
-  if (args.stdinCode && args.command === "mutation") {
-    throw new GateError(
-      "mutation does not accept --stdin-code. Mutation runs on files on disk.",
-    );
-  }
-  const lanes = lanesFor(args.command, mutationConfigured(config));
+  rejectStdinCodeCommand(args);
+  rejectPerfSubflags(args);
+  const lanes = lanesFor(args.command, {
+    mutation: mutationConfigured(config),
+    perf: perfConfigured(config),
+  });
   if (!args.stdinCode) {
     return lanes;
   }
-  return lanes.filter((lane) => lane !== "architecture" && lane !== "mutation");
+  return lanes.filter((lane) => !skipOnStdinCode(lane));
+}
+
+function requireOptionalLaneConfig(
+  value: { config: string } | undefined,
+  missing: string,
+): string {
+  if (value === undefined) {
+    throw new GateError(missing);
+  }
+  return value.config;
 }
 
 function requireMutationConfig(config: AgentLintConfig): string {
-  if (config.mutation === undefined) {
-    throw new GateError(
-      "Mutation config is not set. Set mutation.config to a native Stryker file. Copy templates/mutation/stryker.config.json and point mutation.config at the copy.",
-    );
+  return requireOptionalLaneConfig(
+    config.mutation,
+    "Mutation config is not set. Set mutation.config to a native Stryker file. Copy templates/mutation/stryker.config.json and point mutation.config at the copy.",
+  );
+}
+
+function requireLoadConfig(config: AgentLintConfig): string {
+  return requireOptionalLaneConfig(
+    config.perf?.load === undefined ? undefined : { config: config.perf.load },
+    "Load/soak config is not set. Set perf.load (or perf.config) to an Artillery glue file. Copy templates/perf/perf.config.json and point perf.load at the copy. Load/soak is a Perf lock.",
+  );
+}
+
+function requireMicroConfig(config: AgentLintConfig): string {
+  return requireOptionalLaneConfig(
+    config.perf?.micro === undefined ? undefined : { config: config.perf.micro },
+    "Micro-bench config is not set. Set perf.micro to a Vitest glue file. Copy templates/micro/micro.config.json and point perf.micro at the copy. Micro-bench is a Perf lock. Hyperfine is an allowed alternate micro runner; this wrap ships Vitest.",
+  );
+}
+
+function rejectPerfSubflags(args: CliArgs): void {
+  if ((args.micro || args.load) && args.command !== "perf") {
+    throw new GateError("--micro and --load are only valid with the perf command.");
   }
-  return config.mutation.config;
+}
+
+function wantMicro(args: CliArgs, config: AgentLintConfig): boolean {
+  if (args.micro) {
+    return true;
+  }
+  if (args.load) {
+    return false;
+  }
+  return microConfigured(config);
+}
+
+function wantLoad(args: CliArgs, config: AgentLintConfig): boolean {
+  if (args.load) {
+    return true;
+  }
+  if (args.micro) {
+    return false;
+  }
+  return loadConfigured(config);
 }
 
 function requireJsTs(filePath: string, abs: string, lane: string): void {
@@ -97,7 +166,8 @@ function assertToolsEnabled(files: string[], config: AgentLintConfig, lanes: Lan
     usesEslintCyclo(config, lanes) ||
     usesCognitive(lanes) ||
     usesArchitecture(lanes) ||
-    usesMutation(lanes);
+    usesMutation(lanes) ||
+    usesPerf(lanes);
   if (!anyTool) {
     throw new GateError("No lanes/tools enabled for this run.");
   }
@@ -108,11 +178,19 @@ async function runOnFiles(
   config: AgentLintConfig,
   lanes: Lane[],
   cwd: string,
-): Promise<{ findings: Finding[]; mutationBreak?: number }> {
+  args: CliArgs,
+): Promise<{
+  findings: Finding[];
+  mutationBreak?: number;
+  loadRegression?: number;
+  microRegression?: number;
+}> {
   assertLaneFiles(files, config, lanes);
   assertToolsEnabled(files, config, lanes);
   const findings: Finding[] = [];
   let mutationBreak: number | undefined;
+  let loadRegression: number | undefined;
+  let microRegression: number | undefined;
   if (usesLizard(config, lanes)) {
     findings.push(...runLizard(files, config.cyclomatic.max));
   }
@@ -132,7 +210,41 @@ async function runOnFiles(
       mutationBreak = mutation.breakThreshold;
     }
   }
-  return { findings, mutationBreak };
+  if (usesPerf(lanes)) {
+    const perf = await runPerfLane(args, config, cwd);
+    findings.push(...perf.findings);
+    loadRegression = perf.loadRegression;
+    microRegression = perf.microRegression;
+  }
+  return { findings, mutationBreak, loadRegression, microRegression };
+}
+
+async function runPerfLane(
+  args: CliArgs,
+  config: AgentLintConfig,
+  cwd: string,
+): Promise<{ findings: Finding[]; loadRegression?: number; microRegression?: number }> {
+  const runMicro = wantMicro(args, config);
+  const runLoad = wantLoad(args, config);
+  if (!runMicro && !runLoad) {
+    throw new GateError(
+      "Perf config is not set. Set perf.micro (Vitest micro-bench) and/or perf.load (Artillery load/soak). Copy templates/micro/ or templates/perf/. Both sub-lanes are Perf locks.",
+    );
+  }
+  const findings: Finding[] = [];
+  let loadRegression: number | undefined;
+  let microRegression: number | undefined;
+  if (runMicro) {
+    const micro = await runVitestBench(requireMicroConfig(config), cwd);
+    findings.push(...micro.findings);
+    microRegression = micro.maxRegression;
+  }
+  if (runLoad) {
+    const load = await runArtillery(requireLoadConfig(config), cwd);
+    findings.push(...load.findings);
+    loadRegression = load.maxRegression;
+  }
+  return { findings, loadRegression, microRegression };
 }
 
 async function runEslintOnText(
@@ -187,14 +299,20 @@ function resolvePathArgs(args: CliArgs, stdinText: string | undefined): string[]
 
 function thresholdsFrom(
   config: AgentLintConfig,
-  mutationBreak: number | undefined,
+  extras: { mutationBreak?: number; loadRegression?: number; microRegression?: number },
 ): Thresholds {
   const thresholds: Thresholds = {
     cyclomatic: config.cyclomatic.max,
     cognitive: config.cognitive.max,
   };
-  if (mutationBreak !== undefined) {
-    thresholds.mutation = mutationBreak;
+  if (extras.mutationBreak !== undefined) {
+    thresholds.mutation = extras.mutationBreak;
+  }
+  if (extras.loadRegression !== undefined) {
+    thresholds.load = extras.loadRegression;
+  }
+  if (extras.microRegression !== undefined) {
+    thresholds.micro = extras.microRegression;
   }
   return thresholds;
 }
@@ -212,7 +330,7 @@ export async function runLint(
       throw new GateError("--stdin-code was set but stdin was empty");
     }
     const findings = await runOnStdinCode(stdinText, args.stdinFilePath, config, lanes);
-    return reportFromFindings(findings, lanes, thresholdsFrom(config, undefined));
+    return reportFromFindings(findings, lanes, thresholdsFrom(config, {}));
   }
 
   const files = collectFromPaths(resolvePathArgs(args, stdinText), cwd, config.ignore);
@@ -220,6 +338,14 @@ export async function runLint(
     throw new GateError("No supported source files found after applying ignore patterns.");
   }
 
-  const result = await runOnFiles(files, config, lanes, cwd);
-  return reportFromFindings(result.findings, lanes, thresholdsFrom(config, result.mutationBreak));
+  const result = await runOnFiles(files, config, lanes, cwd, args);
+  return reportFromFindings(
+    result.findings,
+    lanes,
+    thresholdsFrom(config, {
+      mutationBreak: result.mutationBreak,
+      loadRegression: result.loadRegression,
+      microRegression: result.microRegression,
+    }),
+  );
 }
