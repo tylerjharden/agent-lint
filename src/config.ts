@@ -36,6 +36,7 @@ interface RawConfig {
   };
   perf?: {
     config?: unknown;
+    unitBench?: unknown;
   };
   ignore?: unknown;
   agentLint?: RawConfig;
@@ -101,6 +102,16 @@ function parseArchitecture(value: unknown): { config: string } {
   return { config };
 }
 
+function parseOptionalPath(value: unknown, label: string): string | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  if (typeof value !== "string" || value.trim() === "") {
+    throw new GateError(`${label} must be a non-empty string`);
+  }
+  return value;
+}
+
 function parseOptionalConfigBlock(
   value: unknown,
   label: string,
@@ -111,8 +122,8 @@ function parseOptionalConfigBlock(
   if (value === null || typeof value !== "object" || Array.isArray(value)) {
     throw new GateError(`${label} must be an object`);
   }
-  const config = (value as { config?: unknown }).config;
-  if (typeof config !== "string" || config.trim() === "") {
+  const config = parseOptionalPath((value as { config?: unknown }).config, `${label}.config`);
+  if (config === undefined) {
     throw new GateError(`${label}.config must be a non-empty string`);
   }
   return { config };
@@ -122,8 +133,22 @@ function parseMutation(value: unknown): { config: string } | undefined {
   return parseOptionalConfigBlock(value, "mutation");
 }
 
-function parsePerf(value: unknown): { config: string } | undefined {
-  return parseOptionalConfigBlock(value, "perf");
+function parsePerf(
+  value: unknown,
+): { config?: string; unitBench?: string } | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    throw new GateError("perf must be an object");
+  }
+  const body = value as { config?: unknown; unitBench?: unknown };
+  const config = parseOptionalPath(body.config, "perf.config");
+  const unitBench = parseOptionalPath(body.unitBench, "perf.unitBench");
+  if (config === undefined && unitBench === undefined) {
+    throw new GateError("perf.config or perf.unitBench must be a non-empty string");
+  }
+  return { config, unitBench };
 }
 
 function parseIgnore(value: unknown): string[] {

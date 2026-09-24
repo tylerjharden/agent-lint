@@ -231,7 +231,8 @@ function findingIfRegressed(
     kind: "timing",
     lane: "perf",
     tool: "vitest",
-    rule: "perf-regression",
+    rule: "unit-bench-regression",
+    gate: "unit-bench",
     file: sourceFile,
     line: 1,
     bench: current.name,
@@ -239,7 +240,7 @@ function findingIfRegressed(
     baseline: baseline.mean,
     threshold,
     hz: current.hz,
-    message: `perf-regression ${current.name} mean ${value} > ${threshold} (baseline ${baseline.mean}, maxRegression ${maxRegression})`,
+    message: `unit-bench-regression ${current.name} mean ${value} > ${threshold} (baseline ${baseline.mean}, maxRegression ${maxRegression})`,
   };
 }
 
@@ -373,7 +374,7 @@ export async function runVitestBench(
 ): Promise<PerfRunResult> {
   const resolved = requireFile(
     resolve(cwd, configPath),
-    `Perf config not found: ${configPath}. Copy templates/perf/perf.config.json and point perf.config at it.`,
+    `Unit-bench config not found: ${configPath}. Copy templates/unit-bench/unit-bench.config.json and point perf.unitBench at it.`,
   );
   try {
     const native = loadNativeFromDisk(resolved);

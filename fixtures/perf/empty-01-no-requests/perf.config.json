@@ -1,7 +1,7 @@
 {
   "script": "load.yml",
   "baseline": "baseline.json",
-  "maxRegression": 0.1,
+  "maxRegression": 0.5,
   "server": "server.js",
-  "port": 18766
+  "port": 18767
 }

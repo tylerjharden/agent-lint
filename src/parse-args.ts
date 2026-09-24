@@ -82,6 +82,10 @@ const FLAG_HANDLERS: Record<string, FlagFn> = {
     args.stdinCode = true;
     return 1;
   },
+  "--unit-bench": (args) => {
+    args.unitBench = true;
+    return 1;
+  },
   "--format": (args, argv, index) => {
     args.format = parseFormat(takeValue(argv, index, "--format"));
     return 2;
@@ -162,6 +166,7 @@ export function parseArgs(argv: string[]): CliArgs {
     stdin: false,
     stdinCode: false,
     stdinFilePath: "stdin.ts",
+    unitBench: false,
     help: false,
     version: false,
   };

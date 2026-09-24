@@ -2,9 +2,9 @@
 
 Thin Node/TypeScript CLI that **wraps** existing analyzers and normalizes their output into one fail-closed gate.
 
-This is **not** a mega-linter and **not** a wisdom substitute. It reports cyclomatic complexity, cognitive complexity, architecture rule breaches, mutation-score misses, and perf regressions versus a human baseline, then exits.
+This is **not** a mega-linter and **not** a wisdom substitute. It reports cyclomatic complexity, cognitive complexity, architecture rule breaches, mutation-score misses, and G1 perf p95 regressions versus a human baseline, then exits.
 
-Spike #4 adds perf (Vitest bench). BC stays out of scope.
+Spike #4 adds G1 perf (Artillery). Vitest bench is an optional unit-bench helper and is **not** G1. Architecture stays a wrap, not a G1 fail-closed layering claim. BC stays out of scope.
 
 ## Repo
 
@@ -22,9 +22,10 @@ Spike #4 adds perf (Vitest bench). BC stays out of scope.
 | Cognitive | [`eslint-plugin-sonarjs`](https://www.npmjs.com/package/eslint-plugin-sonarjs) `cognitive-complexity` (LGPL-3.0) |
 | Architecture | [dependency-cruiser](https://github.com/sverweij/dependency-cruiser) (MIT) |
 | Mutation | [StrykerJS](https://stryker-mutator.io/) `@stryker-mutator/core` (Apache-2.0) |
-| Perf | [Vitest](https://vitest.dev/) `vitest bench` (MIT) |
+| Perf (G1) | [Artillery](https://www.artillery.io/) `artillery run` (MPL-2.0) |
+| Unit-bench (not G1) | [Vitest](https://vitest.dev/) `vitest bench` (MIT), only via `perf --unit-bench` |
 
-It does **not** invent CCN, cognitive scores, a module graph, mutants, or timings. If lizard, ESLint/sonarjs, dependency-cruiser, Stryker, or Vitest cannot run, the process exits **2** (never a soft pass).
+It does **not** invent CCN, cognitive scores, a module graph, mutants, or timings. If lizard, ESLint/sonarjs, dependency-cruiser, Stryker, or Artillery cannot run, the process exits **2** (never a soft pass). A missing Vitest install fails only `--unit-bench`.
 
 Lizard parsers can still “soft-fail” on broken syntax (that is lizard’s behavior). We surface a tool crash as exit 2; we do not re-parse the file ourselves.
 
@@ -37,7 +38,8 @@ Lizard parsers can still “soft-fail” on broken syntax (that is lizard’s be
 | sonarjs `cognitive-complexity` | Human / JSON / SARIF normalize |
 | dependency-cruiser `cruise()` + native rule files | `arch` command and Finding normalize |
 | StrykerJS `runMutationTest()` + native Stryker files | `mutation` command and score Finding |
-| Vitest `bench` + `--outputJson` | `perf` command, baseline compare, timing Finding |
+| Artillery `run --output` + native YAML | `perf` command, p95 baseline compare, timing Finding |
+| Vitest `bench` + `--outputJson` | `perf --unit-bench` only (not G1) |
 | | Optional future diff-scope hook (`src/scope.ts`) |
 
 We do **not** build parsers, a graph engine, a mutation engine, a benchmark engine, or another Sonar.
@@ -61,7 +63,9 @@ npm run build
 
 `@stryker-mutator/core` is an **npm dependency** (Apache-2.0). A missing install fails the mutation lane closed (exit 2). Test-runner plugins stay in the project that owns the Stryker file.
 
-`vitest` is an **npm dependency** (MIT). A missing install fails the perf lane closed (exit 2). Bench files stay in the project that owns the perf config.
+`artillery` is an **npm dependency** (MPL-2.0). A missing install fails the G1 perf lane closed (exit 2). Artillery 2.0.33 wants Node **22.13+**. Scripts stay in the project that owns the perf config.
+
+`vitest` is an **npm dependency** (MIT). A missing install fails `perf --unit-bench` closed (exit 2). That path is not G1.
 
 ## How to run
 
@@ -75,7 +79,8 @@ npx agent-lint cognitive src --json
 node bin/agent-lint.js arch src
 node dist/cli.js mutation fixtures/mutation/pass-01-add --config test/mutation-enabled.json
 node dist/cli.js mutate fixtures/mutation/pass-01-add --config test/mutation-enabled.json
-node dist/cli.js perf fixtures/perf/pass-01-add --config test/perf-enabled.json
+node dist/cli.js perf fixtures/perf/pass-01-http --config test/perf-enabled.json
+node dist/cli.js perf --unit-bench fixtures/unit-bench/pass-01-add --config test/unit-bench-enabled.json
 
 # paths and/or stdin
 echo fixtures/pass/pass-01-add.ts | node bin/agent-lint.js --stdin
@@ -87,7 +92,7 @@ node bin/agent-lint.js all src --json
 node bin/agent-lint.js all src --sarif
 ```
 
-`--stdin-code` runs cyclomatic and cognitive only. It skips architecture, mutation, and perf because a snippet has no module graph, no test run, and no bench file. `arch --stdin-code`, `mutation --stdin-code`, and `perf --stdin-code` exit **2**.
+`--stdin-code` runs cyclomatic and cognitive only. It skips architecture, mutation, and perf because a snippet has no module graph, no test run, and no Artillery script. `arch --stdin-code`, `mutation --stdin-code`, and `perf --stdin-code` exit **2**.
 
 CI-ready invocations (same binary):
 
@@ -108,18 +113,19 @@ node dist/cli.js perf src --format json
 | `cognitive` | sonarjs `cognitive-complexity` |
 | `arch` | dependency-cruiser |
 | `mutation` (`mutate`) | StrykerJS |
-| `perf` | Vitest bench vs baseline |
+| `perf` | G1 Artillery p95 vs baseline |
+| `perf --unit-bench` | Vitest bench (not G1) |
 | `all` (default) | configured applicable lanes |
 
-`all` includes mutation only when `mutation.config` is set. `all` includes perf only when `perf.config` is set.
+`all` includes mutation only when `mutation.config` is set. `all` includes G1 perf only when `perf.config` is set. `all` never runs `--unit-bench`.
 
 ### Exit codes
 
 | Code | Meaning |
 |------|---------|
-| **0** | Pass — no function over threshold, no architecture `error`, mutation score ≥ `thresholds.break` when mutation ran, and no bench over `baseline * (1 + maxRegression)` when perf ran |
-| **1** | Fail — threshold breach, architecture rule breach, mutation score below `thresholds.break`, or perf regression |
-| **2** | Error — tool missing, config broken, no applicable files, unscorable mutation run, or unscorable perf run. **Never** treated as pass |
+| **0** | Pass — no function over threshold, no architecture `error`, mutation score ≥ `thresholds.break` when mutation ran, and G1 p95 under `baseline * (1 + maxRegression)` (and `ceiling` if set) when perf ran |
+| **1** | Fail — threshold breach, architecture rule breach, mutation score below `thresholds.break`, or G1 p95 miss |
+| **2** | Error — tool missing, config broken, no applicable files, unscorable mutation run, or unscorable Artillery run. **Never** treated as pass |
 
 ## Config
 
@@ -141,7 +147,8 @@ Searched from the working directory, first hit wins:
 | `cognitive.max` | **15** | Same as sonarjs’s usual default. |
 | `architecture.config` | `.dependency-cruiser.cjs` | Native dependency-cruiser file. Missing or unreadable is exit **2**. |
 | `mutation.config` | unset | Native Stryker file. Unset means `all` does not start Stryker. Missing or unreadable when the mutation lane runs is exit **2**. |
-| `perf.config` | unset | Perf glue file (Vitest config path, baseline, `maxRegression`). Unset means `all` does not start Vitest bench. Missing or unreadable when the perf lane runs is exit **2**. |
+| `perf.config` | unset | Artillery glue file (script, baseline p95, `maxRegression`, optional `ceiling` / `server`). Unset means `all` does not start Artillery. Missing or unreadable when the G1 perf lane runs is exit **2**. |
+| `perf.unitBench` | unset | Optional Vitest glue. Used only by `perf --unit-bench`. Not G1. |
 | `ignore` | `node_modules/**`, `dist/**`, `coverage/**`, `.git/**` | Prefix globs. |
 
 CLI overrides: `--max-cyclomatic <n>` and `--max-cognitive <n>`. There is no `--max-mutation` or `--max-perf`. Humans set `thresholds.break` in the Stryker file and `maxRegression` in the perf file.
@@ -193,36 +200,43 @@ Mutation is expensive. Scope `mutate` to the files tests cover. The golden fixtu
 
 `all` does not start Stryker unless `mutation.config` is set. Time a wider glob before putting it on CI.
 
-### Perf config
+### Perf config (G1 = Artillery)
 
-`perf.config` is a path to a **perf glue file**. That file points at a native Vitest config, a human-owned `baseline.json`, and `maxRegression`. agent-lint does not own a benchmark engine.
+`perf.config` is a path to an **Artillery glue file**. That file points at a native Artillery YAML script, a human-owned `baseline.json` (`p95` in milliseconds), `maxRegression`, and an optional `ceiling`. agent-lint does not own a load generator.
 
-The files under `templates/perf/` are **templates**. Copy them, write a cheap `bench/*.bench.js`, record baseline means, and point `perf.config` at the copy. The repo root `agent-lint.config.json` leaves perf unset so `npm run lint:self` does not start Vitest bench.
+**G1 claim = Artillery `http.response_time.p95`.** Vitest bench is not G1.
+
+The files under `templates/perf/` are **templates**. Copy them, set `target` / `server`, record p95, and point `perf.config` at the copy. The repo root `agent-lint.config.json` leaves perf unset so `npm run lint:self` does not start Artillery.
 
 Honor the glue file:
 
-- `runner` — `vitest` (default). Other runners, including hyperfine, are not this wrap.
-- `config` — native Vitest file. Missing or thrown is exit **2**.
-- `baseline` — JSON `{ "benches": [{ "name", "mean" }] }`. `mean` uses the same unit Vitest writes (`--outputJson`). Missing, empty, or non-positive means are exit **2**.
+- `script` — native Artillery YAML. Missing or invalid is exit **2**.
+- `baseline` — JSON `{ "p95": <ms> }`. Same unit Artillery writes (`aggregate.summaries["http.response_time"].p95`). Missing or non-positive is exit **2**.
 - `maxRegression` — finite number ≥ 0. `0.5` allows 50% slower than baseline. Missing or invalid is exit **2**.
+- `ceiling` — optional absolute p95 cap in milliseconds. Over ceiling is exit **1**.
+- `server` / `port` — optional local target the wrap starts before `artillery run`.
 
-Compare is `current.mean > baseline.mean * (1 + maxRegression)`:
+Compare is `current.p95 > baseline.p95 * (1 + maxRegression)`, plus the optional ceiling:
 
-- under the allowed mean — exit **0**
-- over the allowed mean — exit **1** (`kind: "timing"`)
-- missing config, thrown runner, 0 benches, or name mismatch with the baseline — exit **2**
+- under the allowed p95 (and ceiling) — exit **0**
+- over the allowed p95 or ceiling — exit **1** (`kind: "timing"`, `tool: "artillery"`, `gate: "g1"`)
+- missing config, thrown runner, invalid YAML, no target, or 0 HTTP responses — exit **2**
 
-CLI paths do not become bench includes. Vitest reads `benchmark.include` from its own file.
+CLI paths do not become Artillery phases. Artillery reads the YAML script. k6, Bencher, and hyperfine are not this wrap.
 
-Perf fixtures stay cheap (`time: 50`, few iterations). Measured on this machine with `node dist/cli.js perf`:
+Cheap fixtures: 1 second, `arrivalRate: 1`, one GET to a local ping server. Measured on this machine with `node dist/cli.js perf`:
 
 | Fixture | Result | Elapsed |
 |---------|--------|---------|
-| `fixtures/perf/pass-01-add` | under ceiling mean `1` | 1.0s |
-| `fixtures/perf/fail-01-regression` | over tight mean `1e-12` | 1.0s |
-| `fixtures/perf/empty-01-no-benches` | 0 benches | 0.7s |
+| `fixtures/perf/pass-01-http` | p95 under ceiling 60000 | 5.0s |
+| `fixtures/perf/fail-01-regression` | p95 over tight 0.001 | 5.0s |
+| `fixtures/perf/empty-01-no-requests` | 0 HTTP responses | 3.0s |
 
-`all` does not start Vitest bench unless `perf.config` is set. Do not put a wide bench glob on CI without timing it.
+`all` does not start Artillery unless `perf.config` is set.
+
+### Unit-bench (not G1)
+
+`perf --unit-bench` wraps Vitest bench. Set `perf.unitBench` to a glue file (`templates/unit-bench/`). Findings use `gate: "unit-bench"` and `rule: "unit-bench-regression"`. `all` never starts this path. `--unit-bench` with any command other than `perf` is exit **2**.
 
 ## Fixtures
 
@@ -238,9 +252,10 @@ Perf fixtures stay cheap (`time: 50`, few iterations). Measured on this machine 
 | `fixtures/mutation/pass-01-add` | 1 function + tests | `mutation` → exit 0 |
 | `fixtures/mutation/fail-01-survived` | 1 function, surviving mutants | `mutation` → exit 1 |
 | `fixtures/mutation/empty-01-no-mutants` | no valid mutants | `mutation` → exit 2 |
-| `fixtures/perf/pass-01-add` | 1 function + cheap bench | `perf` → exit 0 |
-| `fixtures/perf/fail-01-regression` | same bench, tight baseline | `perf` → exit 1 |
-| `fixtures/perf/empty-01-no-benches` | no `bench()` calls | `perf` → exit 2 |
+| `fixtures/perf/pass-01-http` | Artillery ping, generous p95 | `perf` → exit 0 |
+| `fixtures/perf/fail-01-regression` | Artillery ping, tight p95 | `perf` → exit 1 |
+| `fixtures/perf/empty-01-no-requests` | 0 HTTP responses | `perf` → exit 2 |
+| `fixtures/unit-bench/pass-01-add` | Vitest add (not G1) | `perf --unit-bench` → exit 0 |
 | `test/broken/*` | invalid JSON / max / tools / missing arch, mutation, or perf config | exit 2 |
 
 Labels live in the filenames and directory names. See `fixtures/README.md`.
@@ -252,6 +267,7 @@ Labels live in the filenames and directory names. See `fixtures/README.md`.
 - **ESLint** and `@typescript-eslint/parser`: MIT
 - **dependency-cruiser**: MIT
 - **@stryker-mutator/core**: Apache-2.0
+- **artillery**: MPL-2.0
 - **vitest**: MIT
 - **eslint-plugin-sonarjs**: **LGPL-3.0-only**
 
@@ -263,18 +279,21 @@ LGPL rules for this repo:
 
 `@stryker-mutator/core` is a regular dependency and is also loaded with a dynamic import (`src/runners/load-stryker.ts`). Do not bundle it.
 
-`vitest` is a regular dependency. The wrap resolves the CLI (`vitest/vitest.mjs`) and spawns `vitest bench`. Do not bundle it.
+`artillery` is a regular dependency. The wrap resolves the Artillery CLI (`bin/run`) and spawns `artillery run`. Do not bundle it.
 
-If you redistribute a compiled binary of this CLI, keep sonarjs, Stryker, and Vitest as separate installable modules.
+`vitest` is a regular dependency used only by `perf --unit-bench`. Do not bundle it.
+
+If you redistribute a compiled binary of this CLI, keep sonarjs, Stryker, Artillery, and Vitest as separate installable modules.
 
 ## What this is not
 
-- Not a custom benchmark engine. Not Bencher. Not k6 or Artillery.
-- Not hyperfine (fine later for CLI binaries; this wrap is Vitest bench).
+- Not a custom benchmark engine. Not Bencher. Not k6. Not hyperfine.
+- Not a claim that Vitest bench is the G1 perf gate. G1 perf is Artillery p95.
+- Not a G1 fail-closed architecture claim. `arch` wraps dependency-cruiser until a human ADR.
 - Not BC detection.
 - Not a training reward signal.
-- Not a claim that low complexity, a green architecture lane, a high mutation score, or a stable bench equals good design.
-- Not a substitute for a human ADR on layering, a human-owned Stryker file, or a human-owned baseline.
+- Not a claim that low complexity, a green architecture lane, a high mutation score, or a stable p95 equals good design.
+- Not a substitute for a human ADR on layering, a human-owned Stryker file, or a human-owned Artillery baseline.
 
 ## Layout
 

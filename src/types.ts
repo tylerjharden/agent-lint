@@ -3,7 +3,15 @@ import type { ExitCode } from "./exit.js";
 export type Command = "complexity" | "cognitive" | "arch" | "mutation" | "perf" | "all";
 export type Format = "human" | "json" | "sarif";
 export type Lane = "complexity" | "cognitive" | "architecture" | "mutation" | "perf";
-export type ToolName = "lizard" | "eslint" | "sonarjs" | "dependency-cruiser" | "stryker" | "vitest";
+export type ToolName =
+  | "lizard"
+  | "eslint"
+  | "sonarjs"
+  | "dependency-cruiser"
+  | "stryker"
+  | "artillery"
+  | "vitest";
+export type PerfGate = "g1" | "unit-bench";
 export type Metric = "cyclomatic" | "cognitive";
 export type CyclomaticTool = "lizard" | "eslint";
 
@@ -51,14 +59,16 @@ export interface ScoreFinding {
 export interface TimingFinding {
   kind: "timing";
   lane: "perf";
-  tool: "vitest";
-  rule: "perf-regression";
+  tool: "artillery" | "vitest";
+  rule: "perf-regression" | "perf-ceiling" | "unit-bench-regression";
+  gate: PerfGate;
   file: string;
   line: number;
-  bench: string;
   value: number;
   baseline: number;
   threshold: number;
+  metric?: "p95";
+  bench?: string;
   hz?: number;
   message: string;
 }
@@ -70,6 +80,7 @@ export interface Thresholds {
   cognitive: number;
   mutation?: number;
   perf?: number;
+  unitBench?: number;
 }
 
 export interface LintReport {
@@ -96,7 +107,8 @@ export interface AgentLintConfig {
     config: string;
   };
   perf?: {
-    config: string;
+    config?: string;
+    unitBench?: string;
   };
   ignore: string[];
 }
@@ -111,6 +123,7 @@ export interface CliArgs {
   stdinFilePath: string;
   maxCyclomatic?: number;
   maxCognitive?: number;
+  unitBench: boolean;
   help: boolean;
   version: boolean;
 }

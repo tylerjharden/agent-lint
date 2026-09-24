@@ -40,7 +40,16 @@ function formatScoreLine(finding: ScoreFinding, cwd: string): string {
 
 function formatTimingLine(finding: TimingFinding, cwd: string): string {
   const file = displayPath(finding.file, cwd);
-  return `${file}:${finding.line}  ${finding.bench} mean ${finding.value} > ${finding.threshold}  [${finding.tool}]  ${finding.message}`;
+  switch (finding.tool) {
+    case "artillery":
+      return `${file}:${finding.line}  p95 ${finding.value} > ${finding.threshold}  [artillery]  ${finding.message}`;
+    case "vitest":
+      return `${file}:${finding.line}  ${finding.bench ?? "bench"} mean ${finding.value} > ${finding.threshold}  [vitest]  ${finding.message}`;
+    default: {
+      const exhaustive: never = finding.tool;
+      throw new Error(`Unknown timing tool: ${String(exhaustive)}`);
+    }
+  }
 }
 
 function formatFindingLine(finding: Finding, cwd: string): string {
@@ -76,15 +85,20 @@ function humanHeader(report: LintReport): string[] {
     );
   }
   if (report.lanes.includes("perf")) {
-    const maxRegression = report.thresholds.perf;
-    lines.push(
-      maxRegression === undefined
-        ? "perf: vitest bench"
-        : `perf maxRegression: ${maxRegression}`,
-    );
+    lines.push(perfHeaderLine(report.thresholds));
   }
   lines.push("");
   return lines;
+}
+
+function perfHeaderLine(thresholds: Thresholds): string {
+  if (thresholds.unitBench !== undefined) {
+    return `perf unit-bench maxRegression: ${thresholds.unitBench} (not G1)`;
+  }
+  if (thresholds.perf !== undefined) {
+    return `perf p95 maxRegression: ${thresholds.perf} (G1 / Artillery)`;
+  }
+  return "perf: artillery (G1)";
 }
 
 function appendErrors(lines: string[], errors: string[]): void {
@@ -185,6 +199,7 @@ interface SarifResult {
     bench?: string;
     baseline?: number;
     hz?: number;
+    gate?: string;
   };
 }
 
@@ -197,7 +212,7 @@ function sarifRuleId(finding: Finding): string {
     case "score":
       return "mutation-score";
     case "timing":
-      return "perf-regression";
+      return finding.rule;
     default: {
       const exhaustive: never = finding;
       throw new Error(`Unknown finding: ${String(exhaustive)}`);
@@ -246,9 +261,11 @@ function sarifProperties(finding: Finding, cwd: string): SarifResult["properties
         rule: finding.rule,
         value: finding.value,
         threshold: finding.threshold,
+        metric: finding.metric,
         bench: finding.bench,
         baseline: finding.baseline,
         hz: finding.hz,
+        gate: finding.gate,
       };
     default: {
       const exhaustive: never = finding;
@@ -308,7 +325,15 @@ export function formatSarif(report: LintReport, cwd = process.cwd()): string {
               },
               {
                 id: "perf-regression",
-                shortDescription: { text: "Perf regression vs baseline (Vitest bench)" },
+                shortDescription: { text: "G1 perf p95 vs baseline (Artillery)" },
+              },
+              {
+                id: "perf-ceiling",
+                shortDescription: { text: "G1 perf p95 vs absolute ceiling (Artillery)" },
+              },
+              {
+                id: "unit-bench-regression",
+                shortDescription: { text: "Unit-bench mean vs baseline (Vitest; not G1)" },
               },
             ],
           },

@@ -10,6 +10,7 @@ import { runEslintCognitive, runEslintCognitiveText } from "./runners/eslint-cog
 import { runEslintComplexity, runEslintComplexityText } from "./runners/eslint-complexity.js";
 import { runLizard } from "./runners/lizard.js";
 import { runStryker } from "./runners/stryker.js";
+import { runArtillery } from "./runners/artillery.js";
 import { runVitestBench } from "./runners/vitest-bench.js";
 import { writeTempSource } from "./temp-source.js";
 
@@ -40,7 +41,7 @@ function usesPerf(lanes: Lane[]): boolean {
 const STDIN_CODE_BLOCKED: Partial<Record<CliArgs["command"], string>> = {
   arch: "arch does not accept --stdin-code. Architecture runs on files on disk.",
   mutation: "mutation does not accept --stdin-code. Mutation runs on files on disk.",
-  perf: "perf does not accept --stdin-code. Perf benches run on files on disk.",
+  perf: "perf does not accept --stdin-code. Artillery scripts run on files on disk.",
 };
 
 function rejectStdinCodeCommand(args: CliArgs): void {
@@ -59,6 +60,7 @@ function skipOnStdinCode(lane: Lane): boolean {
 
 function lanesForThisRun(args: CliArgs, config: AgentLintConfig): Lane[] {
   rejectStdinCodeCommand(args);
+  rejectUnitBenchOnAll(args);
   const lanes = lanesFor(args.command, {
     mutation: mutationConfigured(config),
     perf: perfConfigured(config),
@@ -88,9 +90,24 @@ function requireMutationConfig(config: AgentLintConfig): string {
 
 function requirePerfConfig(config: AgentLintConfig): string {
   return requireOptionalLaneConfig(
-    config.perf,
-    "Perf config is not set. Set perf.config to a perf config file. Copy templates/perf/perf.config.json and point perf.config at the copy.",
+    config.perf?.config === undefined ? undefined : { config: config.perf.config },
+    "Perf config is not set. Set perf.config to an Artillery glue file. Copy templates/perf/perf.config.json and point perf.config at the copy.",
   );
+}
+
+function requireUnitBenchConfig(config: AgentLintConfig): string {
+  return requireOptionalLaneConfig(
+    config.perf?.unitBench === undefined ? undefined : { config: config.perf.unitBench },
+    "Unit-bench config is not set. Set perf.unitBench to a Vitest glue file. Copy templates/unit-bench/unit-bench.config.json and point perf.unitBench at the copy. --unit-bench is not the G1 perf gate.",
+  );
+}
+
+function rejectUnitBenchOnAll(args: CliArgs): void {
+  if (args.unitBench && args.command !== "perf") {
+    throw new GateError(
+      "--unit-bench is only valid with the perf command. It is not the G1 perf gate.",
+    );
+  }
 }
 
 function requireJsTs(filePath: string, abs: string, lane: string): void {
@@ -143,12 +160,19 @@ async function runOnFiles(
   config: AgentLintConfig,
   lanes: Lane[],
   cwd: string,
-): Promise<{ findings: Finding[]; mutationBreak?: number; perfRegression?: number }> {
+  unitBench: boolean,
+): Promise<{
+  findings: Finding[];
+  mutationBreak?: number;
+  perfRegression?: number;
+  unitBenchRegression?: number;
+}> {
   assertLaneFiles(files, config, lanes);
   assertToolsEnabled(files, config, lanes);
   const findings: Finding[] = [];
   let mutationBreak: number | undefined;
   let perfRegression: number | undefined;
+  let unitBenchRegression: number | undefined;
   if (usesLizard(config, lanes)) {
     findings.push(...runLizard(files, config.cyclomatic.max));
   }
@@ -168,12 +192,16 @@ async function runOnFiles(
       mutationBreak = mutation.breakThreshold;
     }
   }
-  if (usesPerf(lanes)) {
-    const perf = await runVitestBench(requirePerfConfig(config), cwd);
+  if (usesPerf(lanes) && unitBench) {
+    const perf = await runVitestBench(requireUnitBenchConfig(config), cwd);
+    findings.push(...perf.findings);
+    unitBenchRegression = perf.maxRegression;
+  } else if (usesPerf(lanes)) {
+    const perf = await runArtillery(requirePerfConfig(config), cwd);
     findings.push(...perf.findings);
     perfRegression = perf.maxRegression;
   }
-  return { findings, mutationBreak, perfRegression };
+  return { findings, mutationBreak, perfRegression, unitBenchRegression };
 }
 
 async function runEslintOnText(
@@ -228,7 +256,7 @@ function resolvePathArgs(args: CliArgs, stdinText: string | undefined): string[]
 
 function thresholdsFrom(
   config: AgentLintConfig,
-  extras: { mutationBreak?: number; perfRegression?: number },
+  extras: { mutationBreak?: number; perfRegression?: number; unitBenchRegression?: number },
 ): Thresholds {
   const thresholds: Thresholds = {
     cyclomatic: config.cyclomatic.max,
@@ -239,6 +267,9 @@ function thresholdsFrom(
   }
   if (extras.perfRegression !== undefined) {
     thresholds.perf = extras.perfRegression;
+  }
+  if (extras.unitBenchRegression !== undefined) {
+    thresholds.unitBench = extras.unitBenchRegression;
   }
   return thresholds;
 }
@@ -264,13 +295,14 @@ export async function runLint(
     throw new GateError("No supported source files found after applying ignore patterns.");
   }
 
-  const result = await runOnFiles(files, config, lanes, cwd);
+  const result = await runOnFiles(files, config, lanes, cwd, args.unitBench);
   return reportFromFindings(
     result.findings,
     lanes,
     thresholdsFrom(config, {
       mutationBreak: result.mutationBreak,
       perfRegression: result.perfRegression,
+      unitBenchRegression: result.unitBenchRegression,
     }),
   );
 }

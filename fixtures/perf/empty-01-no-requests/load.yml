@@ -1,0 +1,10 @@
+config:
+  target: "http://127.0.0.1:18767"
+  phases:
+    - duration: 1
+      arrivalRate: 0
+  http:
+    timeout: 3
+scenarios:
+  - name: none
+    flow: []

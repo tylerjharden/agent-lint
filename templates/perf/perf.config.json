@@ -1,6 +1,8 @@
 {
-  "runner": "vitest",
-  "config": "vitest.config.js",
+  "script": "load.yml",
   "baseline": "baseline.json",
-  "maxRegression": 0.5
+  "maxRegression": 0.5,
+  "ceiling": 5000,
+  "server": "server.js",
+  "port": 18765
 }

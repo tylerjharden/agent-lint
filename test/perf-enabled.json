@@ -2,6 +2,6 @@
   "cyclomatic": { "max": 10, "tools": ["lizard", "eslint"] },
   "cognitive": { "max": 15 },
   "architecture": { "config": "fixtures/arch/.dependency-cruiser.cjs" },
-  "perf": { "config": "fixtures/perf/pass-01-add/perf.config.json" },
+  "perf": { "config": "fixtures/perf/pass-01-http/perf.config.json" },
   "ignore": ["node_modules/**", "dist/**"]
 }

@@ -53,3 +53,9 @@ test("non-object perf throws", () => {
     /perf must be an object/,
   );
 });
+
+test("perf.unitBench alone is valid and leaves G1 config unset", () => {
+  const config = parseConfigJson('{"perf":{"unitBench":"unit-bench.config.json"}}', "inline");
+  assert.equal(config.perf?.config, undefined);
+  assert.equal(config.perf?.unitBench, "unit-bench.config.json");
+});

@@ -9,8 +9,12 @@ export function mutationConfigured(config: { mutation?: { config: string } }): b
   return config.mutation !== undefined;
 }
 
-export function perfConfigured(config: { perf?: { config: string } }): boolean {
-  return config.perf !== undefined;
+export function perfConfigured(config: { perf?: { config?: string } }): boolean {
+  return config.perf?.config !== undefined;
+}
+
+export function unitBenchConfigured(config: { perf?: { unitBench?: string } }): boolean {
+  return config.perf?.unitBench !== undefined;
 }
 
 function allLanes(enabled: LaneEnablement): Lane[] {
