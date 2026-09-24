@@ -211,25 +211,40 @@ async function runOnFiles(
     }
   }
   if (usesPerf(lanes)) {
-    const runMicro = wantMicro(args, config);
-    const runLoad = wantLoad(args, config);
-    if (!runMicro && !runLoad) {
-      throw new GateError(
-        "Perf config is not set. Set perf.micro (Vitest micro-bench) and/or perf.load (Artillery load/soak). Copy templates/micro/ or templates/perf/. Both sub-lanes are Perf locks.",
-      );
-    }
-    if (runMicro) {
-      const micro = await runVitestBench(requireMicroConfig(config), cwd);
-      findings.push(...micro.findings);
-      microRegression = micro.maxRegression;
-    }
-    if (runLoad) {
-      const load = await runArtillery(requireLoadConfig(config), cwd);
-      findings.push(...load.findings);
-      loadRegression = load.maxRegression;
-    }
+    const perf = await runPerfLane(args, config, cwd);
+    findings.push(...perf.findings);
+    loadRegression = perf.loadRegression;
+    microRegression = perf.microRegression;
   }
   return { findings, mutationBreak, loadRegression, microRegression };
+}
+
+async function runPerfLane(
+  args: CliArgs,
+  config: AgentLintConfig,
+  cwd: string,
+): Promise<{ findings: Finding[]; loadRegression?: number; microRegression?: number }> {
+  const runMicro = wantMicro(args, config);
+  const runLoad = wantLoad(args, config);
+  if (!runMicro && !runLoad) {
+    throw new GateError(
+      "Perf config is not set. Set perf.micro (Vitest micro-bench) and/or perf.load (Artillery load/soak). Copy templates/micro/ or templates/perf/. Both sub-lanes are Perf locks.",
+    );
+  }
+  const findings: Finding[] = [];
+  let loadRegression: number | undefined;
+  let microRegression: number | undefined;
+  if (runMicro) {
+    const micro = await runVitestBench(requireMicroConfig(config), cwd);
+    findings.push(...micro.findings);
+    microRegression = micro.maxRegression;
+  }
+  if (runLoad) {
+    const load = await runArtillery(requireLoadConfig(config), cwd);
+    findings.push(...load.findings);
+    loadRegression = load.maxRegression;
+  }
+  return { findings, loadRegression, microRegression };
 }
 
 async function runEslintOnText(
