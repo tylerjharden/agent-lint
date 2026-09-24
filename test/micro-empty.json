@@ -1,6 +1,6 @@
 {
   "cyclomatic": { "max": 10, "tools": ["eslint"] },
   "cognitive": { "max": 15 },
-  "perf": { "unitBench": "fixtures/unit-bench/fail-01-regression/unit-bench.config.json" },
+  "perf": { "micro": "fixtures/micro/empty-01-no-benches/micro.config.json" },
   "ignore": ["node_modules/**", "dist/**"]
 }

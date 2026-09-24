@@ -54,8 +54,22 @@ test("non-object perf throws", () => {
   );
 });
 
-test("perf.unitBench alone is valid and leaves G1 config unset", () => {
-  const config = parseConfigJson('{"perf":{"unitBench":"unit-bench.config.json"}}', "inline");
-  assert.equal(config.perf?.config, undefined);
-  assert.equal(config.perf?.unitBench, "unit-bench.config.json");
+test("perf.micro alone is a valid Perf lock", () => {
+  const config = parseConfigJson('{"perf":{"micro":"micro.config.json"}}', "inline");
+  assert.equal(config.perf?.load, undefined);
+  assert.equal(config.perf?.micro, "micro.config.json");
+});
+
+test("perf.load and perf.config both set the load/soak lock", () => {
+  const fromLoad = parseConfigJson('{"perf":{"load":"perf.config.json"}}', "inline");
+  const fromAlias = parseConfigJson('{"perf":{"config":"perf.config.json"}}', "inline");
+  assert.equal(fromLoad.perf?.load, "perf.config.json");
+  assert.equal(fromAlias.perf?.load, "perf.config.json");
+});
+
+test("empty perf.micro throws", () => {
+  assert.throws(
+    () => parseConfigJson('{"perf":{"micro":""}}', "inline"),
+    /perf\.micro must be a non-empty string/,
+  );
 });

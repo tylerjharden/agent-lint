@@ -9,12 +9,16 @@ export function mutationConfigured(config: { mutation?: { config: string } }): b
   return config.mutation !== undefined;
 }
 
-export function perfConfigured(config: { perf?: { config?: string } }): boolean {
-  return config.perf?.config !== undefined;
+export function loadConfigured(config: { perf?: { load?: string } }): boolean {
+  return config.perf?.load !== undefined;
 }
 
-export function unitBenchConfigured(config: { perf?: { unitBench?: string } }): boolean {
-  return config.perf?.unitBench !== undefined;
+export function microConfigured(config: { perf?: { micro?: string } }): boolean {
+  return config.perf?.micro !== undefined;
+}
+
+export function perfConfigured(config: { perf?: { load?: string; micro?: string } }): boolean {
+  return loadConfigured(config) || microConfigured(config);
 }
 
 function allLanes(enabled: LaneEnablement): Lane[] {

@@ -80,8 +80,8 @@ test("compareToBaseline fails when mean exceeds baseline * (1 + maxRegression)",
   assert.equal(finding.kind, "timing");
   assert.equal(finding.lane, "perf");
   assert.equal(finding.tool, "vitest");
-  assert.equal(finding.rule, "unit-bench-regression");
-  assert.equal(finding.gate, "unit-bench");
+  assert.equal(finding.rule, "micro-regression");
+  assert.equal(finding.gate, "micro");
   assert.equal(finding.bench, "add");
   assert.equal(finding.baseline, 0.01);
   assert.equal(finding.threshold, 0.015);

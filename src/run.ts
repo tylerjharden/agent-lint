@@ -3,7 +3,7 @@ import { collectFromPaths, parsePathList } from "./collect-paths.js";
 import type { AgentLintConfig, CliArgs, Finding, Lane, LintReport, Thresholds } from "./types.js";
 import { GateError } from "./errors.js";
 import { isJsTsFile, isLizardFile } from "./extensions.js";
-import { lanesFor, mutationConfigured, perfConfigured } from "./lanes.js";
+import { lanesFor, loadConfigured, microConfigured, mutationConfigured, perfConfigured } from "./lanes.js";
 import { reportFromFindings } from "./report.js";
 import { runDepcruise } from "./runners/depcruise.js";
 import { runEslintCognitive, runEslintCognitiveText } from "./runners/eslint-cognitive.js";
@@ -41,7 +41,7 @@ function usesPerf(lanes: Lane[]): boolean {
 const STDIN_CODE_BLOCKED: Partial<Record<CliArgs["command"], string>> = {
   arch: "arch does not accept --stdin-code. Architecture runs on files on disk.",
   mutation: "mutation does not accept --stdin-code. Mutation runs on files on disk.",
-  perf: "perf does not accept --stdin-code. Artillery scripts run on files on disk.",
+  perf: "perf does not accept --stdin-code. Micro-bench and load/soak run on files on disk.",
 };
 
 function rejectStdinCodeCommand(args: CliArgs): void {
@@ -60,7 +60,7 @@ function skipOnStdinCode(lane: Lane): boolean {
 
 function lanesForThisRun(args: CliArgs, config: AgentLintConfig): Lane[] {
   rejectStdinCodeCommand(args);
-  rejectUnitBenchOnAll(args);
+  rejectPerfSubflags(args);
   const lanes = lanesFor(args.command, {
     mutation: mutationConfigured(config),
     perf: perfConfigured(config),
@@ -88,26 +88,44 @@ function requireMutationConfig(config: AgentLintConfig): string {
   );
 }
 
-function requirePerfConfig(config: AgentLintConfig): string {
+function requireLoadConfig(config: AgentLintConfig): string {
   return requireOptionalLaneConfig(
-    config.perf?.config === undefined ? undefined : { config: config.perf.config },
-    "Perf config is not set. Set perf.config to an Artillery glue file. Copy templates/perf/perf.config.json and point perf.config at the copy.",
+    config.perf?.load === undefined ? undefined : { config: config.perf.load },
+    "Load/soak config is not set. Set perf.load (or perf.config) to an Artillery glue file. Copy templates/perf/perf.config.json and point perf.load at the copy. Load/soak is a Perf lock.",
   );
 }
 
-function requireUnitBenchConfig(config: AgentLintConfig): string {
+function requireMicroConfig(config: AgentLintConfig): string {
   return requireOptionalLaneConfig(
-    config.perf?.unitBench === undefined ? undefined : { config: config.perf.unitBench },
-    "Unit-bench config is not set. Set perf.unitBench to a Vitest glue file. Copy templates/unit-bench/unit-bench.config.json and point perf.unitBench at the copy. --unit-bench is not the G1 perf gate.",
+    config.perf?.micro === undefined ? undefined : { config: config.perf.micro },
+    "Micro-bench config is not set. Set perf.micro to a Vitest glue file. Copy templates/micro/micro.config.json and point perf.micro at the copy. Micro-bench is a Perf lock. Hyperfine is an allowed alternate micro runner; this wrap ships Vitest.",
   );
 }
 
-function rejectUnitBenchOnAll(args: CliArgs): void {
-  if (args.unitBench && args.command !== "perf") {
-    throw new GateError(
-      "--unit-bench is only valid with the perf command. It is not the G1 perf gate.",
-    );
+function rejectPerfSubflags(args: CliArgs): void {
+  if ((args.micro || args.load) && args.command !== "perf") {
+    throw new GateError("--micro and --load are only valid with the perf command.");
   }
+}
+
+function wantMicro(args: CliArgs, config: AgentLintConfig): boolean {
+  if (args.micro) {
+    return true;
+  }
+  if (args.load) {
+    return false;
+  }
+  return microConfigured(config);
+}
+
+function wantLoad(args: CliArgs, config: AgentLintConfig): boolean {
+  if (args.load) {
+    return true;
+  }
+  if (args.micro) {
+    return false;
+  }
+  return loadConfigured(config);
 }
 
 function requireJsTs(filePath: string, abs: string, lane: string): void {
@@ -160,19 +178,19 @@ async function runOnFiles(
   config: AgentLintConfig,
   lanes: Lane[],
   cwd: string,
-  unitBench: boolean,
+  args: CliArgs,
 ): Promise<{
   findings: Finding[];
   mutationBreak?: number;
-  perfRegression?: number;
-  unitBenchRegression?: number;
+  loadRegression?: number;
+  microRegression?: number;
 }> {
   assertLaneFiles(files, config, lanes);
   assertToolsEnabled(files, config, lanes);
   const findings: Finding[] = [];
   let mutationBreak: number | undefined;
-  let perfRegression: number | undefined;
-  let unitBenchRegression: number | undefined;
+  let loadRegression: number | undefined;
+  let microRegression: number | undefined;
   if (usesLizard(config, lanes)) {
     findings.push(...runLizard(files, config.cyclomatic.max));
   }
@@ -192,16 +210,26 @@ async function runOnFiles(
       mutationBreak = mutation.breakThreshold;
     }
   }
-  if (usesPerf(lanes) && unitBench) {
-    const perf = await runVitestBench(requireUnitBenchConfig(config), cwd);
-    findings.push(...perf.findings);
-    unitBenchRegression = perf.maxRegression;
-  } else if (usesPerf(lanes)) {
-    const perf = await runArtillery(requirePerfConfig(config), cwd);
-    findings.push(...perf.findings);
-    perfRegression = perf.maxRegression;
+  if (usesPerf(lanes)) {
+    const runMicro = wantMicro(args, config);
+    const runLoad = wantLoad(args, config);
+    if (!runMicro && !runLoad) {
+      throw new GateError(
+        "Perf config is not set. Set perf.micro (Vitest micro-bench) and/or perf.load (Artillery load/soak). Copy templates/micro/ or templates/perf/. Both sub-lanes are Perf locks.",
+      );
+    }
+    if (runMicro) {
+      const micro = await runVitestBench(requireMicroConfig(config), cwd);
+      findings.push(...micro.findings);
+      microRegression = micro.maxRegression;
+    }
+    if (runLoad) {
+      const load = await runArtillery(requireLoadConfig(config), cwd);
+      findings.push(...load.findings);
+      loadRegression = load.maxRegression;
+    }
   }
-  return { findings, mutationBreak, perfRegression, unitBenchRegression };
+  return { findings, mutationBreak, loadRegression, microRegression };
 }
 
 async function runEslintOnText(
@@ -256,7 +284,7 @@ function resolvePathArgs(args: CliArgs, stdinText: string | undefined): string[]
 
 function thresholdsFrom(
   config: AgentLintConfig,
-  extras: { mutationBreak?: number; perfRegression?: number; unitBenchRegression?: number },
+  extras: { mutationBreak?: number; loadRegression?: number; microRegression?: number },
 ): Thresholds {
   const thresholds: Thresholds = {
     cyclomatic: config.cyclomatic.max,
@@ -265,11 +293,11 @@ function thresholdsFrom(
   if (extras.mutationBreak !== undefined) {
     thresholds.mutation = extras.mutationBreak;
   }
-  if (extras.perfRegression !== undefined) {
-    thresholds.perf = extras.perfRegression;
+  if (extras.loadRegression !== undefined) {
+    thresholds.load = extras.loadRegression;
   }
-  if (extras.unitBenchRegression !== undefined) {
-    thresholds.unitBench = extras.unitBenchRegression;
+  if (extras.microRegression !== undefined) {
+    thresholds.micro = extras.microRegression;
   }
   return thresholds;
 }
@@ -295,14 +323,14 @@ export async function runLint(
     throw new GateError("No supported source files found after applying ignore patterns.");
   }
 
-  const result = await runOnFiles(files, config, lanes, cwd, args.unitBench);
+  const result = await runOnFiles(files, config, lanes, cwd, args);
   return reportFromFindings(
     result.findings,
     lanes,
     thresholdsFrom(config, {
       mutationBreak: result.mutationBreak,
-      perfRegression: result.perfRegression,
-      unitBenchRegression: result.unitBenchRegression,
+      loadRegression: result.loadRegression,
+      microRegression: result.microRegression,
     }),
   );
 }

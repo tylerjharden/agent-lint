@@ -69,7 +69,7 @@ export function parseNativePerfConfig(raw: unknown, source: string): NativePerfC
   const runner = body.runner === undefined ? "vitest" : body.runner;
   if (runner !== "vitest") {
     throw new GateError(
-      `perf runner must be "vitest", got ${JSON.stringify(runner)}. Hyperfine is not this wrap.`,
+      `perf.micro runner must be "vitest". This wrap ships Vitest as the micro lock. Hyperfine is an allowed alternate micro runner, not this binary. Got ${JSON.stringify(runner)}.`,
     );
   }
   return {
@@ -231,8 +231,8 @@ function findingIfRegressed(
     kind: "timing",
     lane: "perf",
     tool: "vitest",
-    rule: "unit-bench-regression",
-    gate: "unit-bench",
+    rule: "micro-regression",
+    gate: "micro",
     file: sourceFile,
     line: 1,
     bench: current.name,
@@ -240,7 +240,7 @@ function findingIfRegressed(
     baseline: baseline.mean,
     threshold,
     hz: current.hz,
-    message: `unit-bench-regression ${current.name} mean ${value} > ${threshold} (baseline ${baseline.mean}, maxRegression ${maxRegression})`,
+    message: `micro-regression ${current.name} mean ${value} > ${threshold} (baseline ${baseline.mean}, maxRegression ${maxRegression})`,
   };
 }
 
@@ -339,11 +339,11 @@ function compareRun(
 ): PerfRunResult {
   const vitestConfig = requireFile(
     resolve(workdir, native.config),
-    `Vitest config not found: ${native.config}. Copy templates/perf/vitest.config.js and point perf config at it.`,
+    `Vitest config not found: ${native.config}. Copy templates/micro/vitest.config.js and point perf.micro at it.`,
   );
   const baselinePath = requireFile(
     resolve(workdir, native.baseline),
-    `Perf baseline not found: ${native.baseline}. Copy templates/perf/baseline.json, record means, and point baseline at it.`,
+    `Micro-bench baseline not found: ${native.baseline}. Copy templates/micro/baseline.json, record means, and point baseline at it.`,
   );
   const baseline = benchesFromBaselineJson(parseJsonFile(baselinePath, "perf baseline"), baselinePath);
   const scratch = mkdtempSync(join(tmpdir(), "agent-lint-perf-"));
@@ -374,7 +374,7 @@ export async function runVitestBench(
 ): Promise<PerfRunResult> {
   const resolved = requireFile(
     resolve(cwd, configPath),
-    `Unit-bench config not found: ${configPath}. Copy templates/unit-bench/unit-bench.config.json and point perf.unitBench at it.`,
+    `Micro-bench config not found: ${configPath}. Copy templates/micro/micro.config.json and point perf.micro at it.`,
   );
   try {
     const native = loadNativeFromDisk(resolved);

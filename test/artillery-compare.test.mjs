@@ -51,8 +51,8 @@ test("compareArtilleryP95 fails when p95 exceeds the allowed mean", () => {
   const finding = findings[0];
   assert.equal(finding.kind, "timing");
   assert.equal(finding.tool, "artillery");
-  assert.equal(finding.rule, "perf-regression");
-  assert.equal(finding.gate, "g1");
+  assert.equal(finding.rule, "load-regression");
+  assert.equal(finding.gate, "load");
   assert.equal(finding.metric, "p95");
   assert.equal(finding.threshold, 15);
 });
@@ -60,6 +60,6 @@ test("compareArtilleryP95 fails when p95 exceeds the allowed mean", () => {
 test("compareArtilleryP95 fails an absolute ceiling", () => {
   const findings = compareArtilleryP95(12, 20, 0.5, 10, "perf.config.json");
   assert.equal(findings.length, 1);
-  assert.equal(findings[0].rule, "perf-ceiling");
-  assert.equal(findings[0].gate, "g1");
+  assert.equal(findings[0].rule, "load-ceiling");
+  assert.equal(findings[0].gate, "load");
 });

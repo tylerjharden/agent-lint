@@ -92,13 +92,17 @@ function humanHeader(report: LintReport): string[] {
 }
 
 function perfHeaderLine(thresholds: Thresholds): string {
-  if (thresholds.unitBench !== undefined) {
-    return `perf unit-bench maxRegression: ${thresholds.unitBench} (not G1)`;
+  const parts: string[] = [];
+  if (thresholds.micro !== undefined) {
+    parts.push(`micro maxRegression: ${thresholds.micro}`);
   }
-  if (thresholds.perf !== undefined) {
-    return `perf p95 maxRegression: ${thresholds.perf} (G1 / Artillery)`;
+  if (thresholds.load !== undefined) {
+    parts.push(`load p95 maxRegression: ${thresholds.load}`);
   }
-  return "perf: artillery (G1)";
+  if (parts.length === 0) {
+    return "perf: micro-bench + load/soak";
+  }
+  return `perf ${parts.join("; ")}`;
 }
 
 function appendErrors(lines: string[], errors: string[]): void {
@@ -324,16 +328,16 @@ export function formatSarif(report: LintReport, cwd = process.cwd()): string {
                 shortDescription: { text: "Mutation score (StrykerJS)" },
               },
               {
-                id: "perf-regression",
-                shortDescription: { text: "G1 perf p95 vs baseline (Artillery)" },
+                id: "load-regression",
+                shortDescription: { text: "Load/soak p95 vs baseline (Artillery)" },
               },
               {
-                id: "perf-ceiling",
-                shortDescription: { text: "G1 perf p95 vs absolute ceiling (Artillery)" },
+                id: "load-ceiling",
+                shortDescription: { text: "Load/soak p95 vs absolute ceiling (Artillery)" },
               },
               {
-                id: "unit-bench-regression",
-                shortDescription: { text: "Unit-bench mean vs baseline (Vitest; not G1)" },
+                id: "micro-regression",
+                shortDescription: { text: "Micro-bench mean vs baseline (Vitest)" },
               },
             ],
           },

@@ -11,7 +11,7 @@ export type ToolName =
   | "stryker"
   | "artillery"
   | "vitest";
-export type PerfGate = "g1" | "unit-bench";
+export type PerfGate = "micro" | "load";
 export type Metric = "cyclomatic" | "cognitive";
 export type CyclomaticTool = "lizard" | "eslint";
 
@@ -60,7 +60,7 @@ export interface TimingFinding {
   kind: "timing";
   lane: "perf";
   tool: "artillery" | "vitest";
-  rule: "perf-regression" | "perf-ceiling" | "unit-bench-regression";
+  rule: "micro-regression" | "load-regression" | "load-ceiling";
   gate: PerfGate;
   file: string;
   line: number;
@@ -79,8 +79,8 @@ export interface Thresholds {
   cyclomatic: number;
   cognitive: number;
   mutation?: number;
-  perf?: number;
-  unitBench?: number;
+  load?: number;
+  micro?: number;
 }
 
 export interface LintReport {
@@ -107,8 +107,8 @@ export interface AgentLintConfig {
     config: string;
   };
   perf?: {
-    config?: string;
-    unitBench?: string;
+    load?: string;
+    micro?: string;
   };
   ignore: string[];
 }
@@ -123,7 +123,8 @@ export interface CliArgs {
   stdinFilePath: string;
   maxCyclomatic?: number;
   maxCognitive?: number;
-  unitBench: boolean;
+  micro: boolean;
+  load: boolean;
   help: boolean;
   version: boolean;
 }

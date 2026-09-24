@@ -1,6 +1,12 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { lanesFor, mutationConfigured, perfConfigured, unitBenchConfigured } from "../dist/lanes.js";
+import {
+  lanesFor,
+  loadConfigured,
+  microConfigured,
+  mutationConfigured,
+  perfConfigured,
+} from "../dist/lanes.js";
 
 test("all without mutation.config stays three lanes", () => {
   assert.deepEqual(lanesFor("all", false), ["complexity", "cognitive", "architecture"]);
@@ -49,13 +55,20 @@ test("mutationConfigured is opt-in", () => {
   assert.equal(mutationConfigured({ mutation: { config: "stryker.config.json" } }), true);
 });
 
-test("perfConfigured is opt-in G1 config only", () => {
+test("perfConfigured is opt-in for either Perf lock", () => {
   assert.equal(perfConfigured({}), false);
-  assert.equal(perfConfigured({ perf: { unitBench: "unit-bench.config.json" } }), false);
-  assert.equal(perfConfigured({ perf: { config: "perf.config.json" } }), true);
+  assert.equal(perfConfigured({ perf: { micro: "micro.config.json" } }), true);
+  assert.equal(perfConfigured({ perf: { load: "perf.config.json" } }), true);
 });
 
-test("unitBenchConfigured is opt-in and not G1", () => {
-  assert.equal(unitBenchConfigured({}), false);
-  assert.equal(unitBenchConfigured({ perf: { unitBench: "unit-bench.config.json" } }), true);
+test("microConfigured is the micro-bench lock", () => {
+  assert.equal(microConfigured({}), false);
+  assert.equal(microConfigured({ perf: { micro: "micro.config.json" } }), true);
+  assert.equal(microConfigured({ perf: { load: "perf.config.json" } }), false);
+});
+
+test("loadConfigured is the load/soak lock", () => {
+  assert.equal(loadConfigured({}), false);
+  assert.equal(loadConfigured({ perf: { load: "perf.config.json" } }), true);
+  assert.equal(loadConfigured({ perf: { micro: "micro.config.json" } }), false);
 });

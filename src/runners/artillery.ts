@@ -135,7 +135,7 @@ function allowedP95(baseline: number, maxRegression: number): number {
 }
 
 function timingFinding(
-  rule: "perf-regression" | "perf-ceiling",
+  rule: "load-regression" | "load-ceiling",
   value: number,
   baseline: number,
   threshold: number,
@@ -147,7 +147,7 @@ function timingFinding(
     lane: "perf",
     tool: "artillery",
     rule,
-    gate: "g1",
+    gate: "load",
     file: sourceFile,
     line: 1,
     value,
@@ -170,24 +170,24 @@ export function compareArtilleryP95(
   if (current > threshold) {
     findings.push(
       timingFinding(
-        "perf-regression",
+        "load-regression",
         current,
         baseline,
         threshold,
         sourceFile,
-        `perf-regression p95 ${current} > ${threshold} (baseline ${baseline}, maxRegression ${maxRegression})`,
+        `load-regression p95 ${current} > ${threshold} (baseline ${baseline}, maxRegression ${maxRegression})`,
       ),
     );
   }
   if (ceiling !== undefined && current > ceiling) {
     findings.push(
       timingFinding(
-        "perf-ceiling",
+        "load-ceiling",
         current,
         ceiling,
         ceiling,
         sourceFile,
-        `perf-ceiling p95 ${current} > ${ceiling}`,
+        `load-ceiling p95 ${current} > ${ceiling}`,
       ),
     );
   }
@@ -353,7 +353,7 @@ export async function runArtillery(
 ): Promise<ArtilleryRunResult> {
   const resolved = requireFile(
     resolve(cwd, configPath),
-    `Perf config not found: ${configPath}. Copy templates/perf/perf.config.json and point perf.config at it.`,
+    `Load/soak config not found: ${configPath}. Copy templates/perf/perf.config.json and point perf.load at it.`,
   );
   try {
     const native = parseNativeArtilleryConfig(parseJsonFile(resolved, "perf config"), resolved);

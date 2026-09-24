@@ -35,8 +35,9 @@ interface RawConfig {
     config?: unknown;
   };
   perf?: {
+    load?: unknown;
+    micro?: unknown;
     config?: unknown;
-    unitBench?: unknown;
   };
   ignore?: unknown;
   agentLint?: RawConfig;
@@ -133,22 +134,22 @@ function parseMutation(value: unknown): { config: string } | undefined {
   return parseOptionalConfigBlock(value, "mutation");
 }
 
-function parsePerf(
-  value: unknown,
-): { config?: string; unitBench?: string } | undefined {
+function parsePerf(value: unknown): { load?: string; micro?: string } | undefined {
   if (value === undefined) {
     return undefined;
   }
   if (value === null || typeof value !== "object" || Array.isArray(value)) {
     throw new GateError("perf must be an object");
   }
-  const body = value as { config?: unknown; unitBench?: unknown };
-  const config = parseOptionalPath(body.config, "perf.config");
-  const unitBench = parseOptionalPath(body.unitBench, "perf.unitBench");
-  if (config === undefined && unitBench === undefined) {
-    throw new GateError("perf.config or perf.unitBench must be a non-empty string");
+  const body = value as { load?: unknown; micro?: unknown; config?: unknown };
+  const load =
+    parseOptionalPath(body.load, "perf.load") ??
+    parseOptionalPath(body.config, "perf.config");
+  const micro = parseOptionalPath(body.micro, "perf.micro");
+  if (load === undefined && micro === undefined) {
+    throw new GateError("perf.micro and/or perf.load must be a non-empty string");
   }
-  return { config, unitBench };
+  return { load, micro };
 }
 
 function parseIgnore(value: unknown): string[] {
